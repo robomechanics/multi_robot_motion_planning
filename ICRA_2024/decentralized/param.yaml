@@ -1,0 +1,6 @@
+num_agents : 1
+map_size : 10
+num_trials : 1
+num_obstacles : 3
+batch_sim : true
+nav_scenario : "circle" # or narrow
