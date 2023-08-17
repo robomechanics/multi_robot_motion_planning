@@ -83,9 +83,19 @@ class CB_MPC(MPC_Base):
             
         Q = self.cost_func_params['Q']
         R = self.cost_func_params['R']
+        P = self.cost_func_params['P']
+     
         for k in range(self.N):
-            robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
-                                    ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 1000000 * opt_epsilon_r[k] + 1000000 * opt_epsilon_o[k]
+            if self.ref:
+                ref_seg = self.extract_trajectory_segment(current_state)
+                ref = np.array([[d['x'], d['y']] for d in ref_seg[agent_id]])
+                curr_ref = ref[k,:].reshape(1,2)
+                robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
+                                        ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + ca.mtimes([(opt_states[k, :2]-curr_ref), P, (opt_states[k, :2]-curr_ref).T]) + 100000 * opt_epsilon_o[k] + 100000 * opt_epsilon_r[k]
+            else: 
+                robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
+                                        ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 100000 * opt_epsilon_o[k] + 100000 * opt_epsilon_r[k]
+
             
         for l in range(self.num_agent):
             if l == agent_id:
@@ -106,13 +116,13 @@ class CB_MPC(MPC_Base):
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
         # static obstacle constraint
-        for obs in self.static_obs:
+        obstacles = get_obstacle_coordinates(self.map)
+        for obs in obstacles:
             obs_x = obs[0]
             obs_y = obs[1]
-            obs_dia = obs[2]
             for l in range(self.N+1):
-                rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-self.rob_dia/2.0-obs_dia/2.0 + opt_epsilon_o[l]
-                opti.subject_to(self.opti.bounded(0.0, rob_obs_constraints_, ca.inf))
+                rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-self.rob_dia + opt_epsilon_o[l]
+                opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
         
         # Add inter robot constraints
         if inter_rob_constraints:
