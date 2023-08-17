@@ -285,3 +285,15 @@ def visualize_scenario(waypoints_dict, occupancy_grid, initial_states, final_sta
 
     # Set labels and legend
     plt.show()
+
+def get_obstacle_coordinates(occupancy_grid):
+    obstacle_centers = []
+        
+    for row_idx, row in enumerate(occupancy_grid):
+        for col_idx, cell in enumerate(row):
+            if cell == 1:  # Assuming 1 represents an obstacle
+                center_x = col_idx + 0.5  # Adding 0.5 to get the center
+                center_y = row_idx + 0.5  # Adding 0.5 to get the center
+                obstacle_centers.append((center_x, center_y))
+    
+    return obstacle_centers

@@ -28,7 +28,7 @@ class Draw_MPC_point_stabilization_v1(object):
         included_frames = range(0, num_frames, skip_frames)  # Generate indices of included frames
 
         self.ani = animation.FuncAnimation(self.fig, self.animation_loop, included_frames,
-                                           init_func=self.animation_init, interval=100, repeat=False)
+                                           init_func=self.animation_init, interval=50, repeat=False)
 
         if export_fig:
             self.ani.save('./v1.gif', writer='imagemagick', fps=30)
@@ -104,8 +104,8 @@ class Draw_MPC_point_stabilization_v1(object):
         return self.target_circles, self.target_arrs, self.robot_bodies, self.robot_arrs, self.static_obs
 
     def animation_loop(self, indx):
-        self.ax.cla()  # Clear the axes for each frame
-        self.ax.imshow(self.occupancy_map, cmap='gray_r', origin='lower')
+        # self.ax.cla()  # Clear the axes for each frame
+        # self.ax.imshow(self.occupancy_map, cmap='gray_r', origin='lower')
         
         for i in range(self.num_agents):
             robot_states = self.robot_states[i]

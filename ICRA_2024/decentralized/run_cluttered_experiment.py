@@ -16,14 +16,14 @@ if __name__ == "__main__":
     cost_func_params = {
         'Q':  np.array([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, .1]]),
         'R': np.array([[7.5, 0.0], [0.0, 0.05]]),
-        'P': np.array([[12.5, 0.0], [0.0, 12.5]]),
+        'P': np.array([[10.0, 0.0], [0.0, 10.0]]),
         'Qc': 8,
         'kappa': 3 
     }
     mpc_params = {
         'num_agents': 2,
         'dt': 0.05,
-        'N' : 60,
+        'N' : 40,
         'rob_dia': 0.3,
         'v_lim': 1.0,
         'omega_lim': 1.0,
@@ -42,10 +42,10 @@ if __name__ == "__main__":
     obs = {"static": static_obs, "dynamic": obs_traj}
 
     # print_metrics_summary("MPC_cluttered_2")
-    visualize_logged_run("CB-MPC_cluttered_16")
+    # visualize_logged_run("CB-MPC_cluttered_16")
     
     num_trials = 1
-    num_agents = [16]
+    num_agents = [20]
     algorithms = ["CB-MPC", "PR-MPC", "D-MPC"]
     for num_agent in num_agents:
         scenario = "cluttered_" + str(num_agent)
@@ -59,25 +59,25 @@ if __name__ == "__main__":
         initial_states, final_states = task_gen.generate_tasks()
         print("Generated tasks")
         
-        env = Environment(map, map_size, initial_states, final_states)
-        cbs = CBS(env)
-        solution = cbs.search()
+        # env = Environment(map, map_size, initial_states, final_states)
+        # cbs = CBS(env)
+        # solution = cbs.search()
         
-        ref = discretize_waypoints(solution, mpc_params["dt"], mpc_params["N"])
-        visualize_scenario(solution, map, initial_states, final_states)
+        # ref = discretize_waypoints(solution, mpc_params["dt"], mpc_params["N"])
+        # visualize_scenario(solution, map, initial_states, final_states)
 
-        if not solution:
-            print("CBS Solution not found")
+        # if not solution:
+        #     print("CBS Solution not found")
 
-        # for trial in range(num_trials):
-        #     # mpc = DMPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, ref)
-        #     # mpc.simulate()
-        #     # print("Finished MPC")
+        for trial in range(num_trials):
+            # mpc = DMPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, ref)
+            # mpc.simulate()
+            # print("Finished MPC")
 
-        #     mpc = CB_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map, ref)
-        #     mpc.simulate()
-        #     print("Finished CB-MPC")
+            mpc = CB_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map)
+            mpc.simulate()
+            print("Finished CB-MPC")
 
-        #     # mpc = PR_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, ref)
-        #     # mpc.simulate()
-        #     # print("Finished PR-MPC")
+            # mpc = PR_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, ref)
+            # mpc.simulate()
+            # print("Finished PR-MPC")
