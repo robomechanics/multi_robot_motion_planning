@@ -44,36 +44,46 @@ class D_MPC(MPC_Base):
             
         Q = self.cost_func_params['Q']
         R = self.cost_func_params['R']
+        P = self.cost_func_params['P']
+     
         for k in range(self.N):
-            robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
-                                    ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 1000000 * opt_epsilon_r[k] + 1000000 * opt_epsilon_o[k]
+            if self.ref:
+                ref_seg = self.extract_trajectory_segment(current_state)
+                ref = np.array([[d['x'], d['y']] for d in ref_seg[agent_id]])
+                curr_ref = ref[k,:].reshape(1,2)
+                robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
+                                        ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + ca.mtimes([(opt_states[k, :2]-curr_ref), P, (opt_states[k, :2]-curr_ref).T]) + 100000 * opt_epsilon_o[k] + 100000 * opt_epsilon_r[k]
+            else: 
+                robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
+                                        ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 100000 * opt_epsilon_o[k] + 100000 * opt_epsilon_r[k]
             
-            for l in range(self.num_agent):
-                if l == agent_id:
-                    continue
-                this_rob = self.current_state[agent_id]
-                other_rob = self.current_state[l]
-                distance = math.sqrt((this_rob[0] - other_rob[0])**2 + (this_rob[1] - other_rob[1])**2)
-                if distance < 0.5:
-                    collision_cost += distance
+            # for l in range(self.num_agent):
+            #     if l == agent_id:
+            #         continue
+            #     this_rob = self.current_state[agent_id]
+            #     other_rob = self.current_state[l]
+            #     distance = math.sqrt((this_rob[0] - other_rob[0])**2 + (this_rob[1] - other_rob[1])**2)
+            #     if distance < 0.5:
+            #         collision_cost += distance
 
         total_cost = robot_cost + 1000 * collision_cost
         opti.minimize(total_cost)
 
         # boundrary and control conditions
-        opti.subject_to(opti.bounded(-10.0, opt_x, 10.0))
-        opti.subject_to(opti.bounded(-10.0, opt_y, 10.0))
+        opti.subject_to(opti.bounded(-12.0, opt_x, 12.0))
+        opti.subject_to(opti.bounded(-12.0, opt_y, 12.0))
         opti.subject_to(opti.bounded(-self.v_lim, v, self.v_lim))
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
         # static obstacle constraint
-        for obs in self.static_obs:
-            obs_x = obs[0]
-            obs_y = obs[1]
-            obs_dia = obs[2]
-            for l in range(self.N+1):
-                rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-self.rob_dia/2.0-obs_dia/2.0 + opt_epsilon_o[l]
-                opti.subject_to(self.opti.bounded(0.0, rob_obs_constraints_, ca.inf))
+        if self.map is not None:
+            obstacles = get_obstacle_coordinates(self.map, current_state)
+            for obs in obstacles:
+                obs_x = obs[0]
+                obs_y = obs[1]
+                for l in range(self.N+1):
+                    rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-1.1 + opt_epsilon_o[l]
+                    opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
         
         num_rob_constraints = 0.0
         # Add inter robot constraints
@@ -110,8 +120,13 @@ class D_MPC(MPC_Base):
         # obtain the control input
         u_res = sol.value(opt_controls)
         next_states_pred = sol.value(opt_states)
-        epsilon_o = sol.value(opt_epsilon_o)
-        epsilon_r = sol.value(opt_epsilon_r)
+        eps_o = sol.value(opt_epsilon_o)
+        eps_r = sol.value(opt_epsilon_r)
+
+        self.prev_states[agent_id] = next_states_pred
+        self.prev_controls[agent_id] = u_res
+        self.prev_epsilon_o[agent_id] = eps_o 
+        self.prev_epsilon_r[agent_id] = eps_r
   
         return u_res, next_states_pred
     

@@ -6,6 +6,7 @@ from math import fabs
 from itertools import combinations
 from copy import deepcopy
 from a_star import AStar
+import time
 
 class Location(object):
     def __init__(self, x=-1, y=-1):
@@ -257,7 +258,7 @@ class CBS(object):
         self.open_set = set()
         self.closed_set = set()
     
-    def search(self):
+    def search(self, timeout):
         start = HighLevelNode()
         start.constraint_dict = {}
 
@@ -271,7 +272,12 @@ class CBS(object):
 
         self.open_set |= {start}
 
+        time_1 = time.time()
+        time_2 = time.time()
         while self.open_set:
+            if abs(time_2 - time_1) > timeout:
+                raise TimeoutError
+            
             P = min(self.open_set)
             self.open_set -= {P}
             self.closed_set |= {P}
@@ -298,6 +304,7 @@ class CBS(object):
                 # TODO: ending condition
                 if new_node not in self.closed_set:
                     self.open_set |= {new_node}
+            time_2 = time.time()
 
         return {}
 
