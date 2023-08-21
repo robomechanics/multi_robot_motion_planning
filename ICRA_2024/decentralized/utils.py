@@ -167,7 +167,7 @@ def visualize_average_metrics(base_folder="results"):
     generate_grouped_bar_plot(data_makespan, x_labels, "Average Makespan (seconds)", "Average Makespan", algorithm_names)
 
 def visualize_logged_run(foldername):
-    file_path = os.path.join("results", foldername, "trial_0.pkl")
+    file_path = os.path.join("results", foldername, "trial_1.pkl")
     with open(file_path, "rb") as file:
         metrics = pickle.load(file)
         state_cache = metrics["state_cache"]
@@ -286,14 +286,19 @@ def visualize_scenario(waypoints_dict, occupancy_grid, initial_states, final_sta
     # Set labels and legend
     plt.show()
 
-def get_obstacle_coordinates(occupancy_grid):
+def get_obstacle_coordinates(occupancy_grid, current_position):
     obstacle_centers = []
+    current_row = current_position[0]
+    current_col = current_position[1]
         
     for row_idx, row in enumerate(occupancy_grid):
         for col_idx, cell in enumerate(row):
             if cell == 1:  # Assuming 1 represents an obstacle
                 center_x = col_idx + 0.5  # Adding 0.5 to get the center
                 center_y = row_idx + 0.5  # Adding 0.5 to get the center
-                obstacle_centers.append((center_x, center_y))
+
+                distance = ((center_x - current_col)**2 + (center_y - current_row)**2) ** 0.05
+                if distance <= 4:
+                    obstacle_centers.append((center_x, center_y))
     
     return obstacle_centers

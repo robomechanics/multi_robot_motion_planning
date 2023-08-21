@@ -97,7 +97,11 @@ class MPC(MPC_Base):
         # obtain the control input
         u_res = sol.value(opt_controls)
         next_states_pred = sol.value(opt_states)
-        epsilon_o = sol.value(opt_epsilon_o)
+        eps_o = sol.value(opt_epsilon_o)
+
+        self.prev_states[agent_id] = next_states_pred
+        self.prev_controls[agent_id] = u_res
+        self.prev_epsilon_o[agent_id] = eps_o 
   
         return u_res, next_states_pred
     

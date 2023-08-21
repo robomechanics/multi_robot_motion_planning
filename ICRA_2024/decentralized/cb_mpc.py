@@ -97,14 +97,14 @@ class CB_MPC(MPC_Base):
                                         ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 100000 * opt_epsilon_o[k] + 100000 * opt_epsilon_r[k]
 
             
-        for l in range(self.num_agent):
-            if l == agent_id:
-                continue
-            this_rob = self.current_state[agent_id]
-            other_rob = self.current_state[l]
-            distance = math.sqrt((this_rob[0] - other_rob[0])**2 + (this_rob[1] - other_rob[1])**2)
-            if distance < 0.5:
-                collision_cost += distance
+        # for l in range(self.num_agent):
+        #     if l == agent_id:
+        #         continue
+        #     this_rob = self.current_state[agent_id]
+        #     other_rob = self.current_state[l]
+        #     distance = math.sqrt((this_rob[0] - other_rob[0])**2 + (this_rob[1] - other_rob[1])**2)
+        #     if distance < 0.5:
+        #         collision_cost += distance
 
         total_cost = robot_cost + 1000 * collision_cost
         opti.minimize(total_cost)
@@ -116,13 +116,14 @@ class CB_MPC(MPC_Base):
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
         # static obstacle constraint
-        obstacles = get_obstacle_coordinates(self.map)
-        for obs in obstacles:
-            obs_x = obs[0]
-            obs_y = obs[1]
-            for l in range(self.N+1):
-                rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-self.rob_dia + opt_epsilon_o[l]
-                opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
+        if self.map is not None:
+            obstacles = get_obstacle_coordinates(self.map, current_state)
+            for obs in obstacles:
+                obs_x = obs[0]
+                obs_y = obs[1]
+                for l in range(self.N+1):
+                    rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-1.1 + opt_epsilon_o[l]
+                    opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
         
         # Add inter robot constraints
         if inter_rob_constraints:
@@ -149,6 +150,11 @@ class CB_MPC(MPC_Base):
         # set parameter, here only update initial state of x (x0)
         opti.set_value(opt_x0, current_state)
 
+        opti.set_initial(opt_states, self.prev_states[agent_id])
+        opti.set_initial(opt_controls, self.prev_controls[agent_id])
+        opti.set_initial(opt_epsilon_o, self.prev_epsilon_o[agent_id])
+        opti.set_initial(opt_epsilon_r, self.prev_epsilon_r[agent_id])
+
         # solve the optimization problem
         t_ = time.time()
         sol = opti.solve()
@@ -158,9 +164,14 @@ class CB_MPC(MPC_Base):
         # obtain the control input
         u_res = sol.value(opt_controls)
         next_states_pred = sol.value(opt_states)
+        eps_o = sol.value(opt_epsilon_o)
+        eps_r = sol.value(opt_epsilon_r)
 
-        self.prev_states = next_states_pred
-        self.prev_controls = u_res
+        self.prev_states[agent_id] = next_states_pred
+        self.prev_controls[agent_id] = u_res
+        self.prev_epsilon_o[agent_id] = eps_o 
+        self.prev_epsilon_r[agent_id] = eps_r
+  
   
         return u_res, next_states_pred
     

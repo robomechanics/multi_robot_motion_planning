@@ -56,21 +56,21 @@ class PR_MPC(MPC_Base):
                 robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
                                         ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 1000000 * opt_epsilon_o[k] + 1000000 * opt_epsilon_r[k]
 
-            for l in range(self.num_agent):
-                if l == agent_id:
-                    continue
-                this_rob = self.current_state[agent_id]
-                other_rob = self.current_state[l]
-                distance = math.sqrt((this_rob[0] - other_rob[0])**2 + (this_rob[1] - other_rob[1])**2)
-                if distance < 0.5:
-                    collision_cost += distance
+            # for l in range(self.num_agent):
+            #     if l == agent_id:
+            #         continue
+            #     this_rob = self.current_state[agent_id]
+            #     other_rob = self.current_state[l]
+            #     distance = math.sqrt((this_rob[0] - other_rob[0])**2 + (this_rob[1] - other_rob[1])**2)
+            #     if distance < 0.5:
+            #         collision_cost += distance
 
         total_cost = robot_cost + 100 * collision_cost
         opti.minimize(total_cost)
 
         # boundrary and control conditions
-        opti.subject_to(opti.bounded(-10.0, opt_x, 10.0))
-        opti.subject_to(opti.bounded(-10.0, opt_y, 10.0))
+        opti.subject_to(opti.bounded(-12.0, opt_x, 12.0))
+        opti.subject_to(opti.bounded(-12.0, opt_y, 12.0))
         opti.subject_to(opti.bounded(-self.v_lim, v, self.v_lim))
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
@@ -114,7 +114,13 @@ class PR_MPC(MPC_Base):
         # obtain the control input
         u_res = sol.value(opt_controls)
         next_states_pred = sol.value(opt_states)
-        epsilon_o = sol.value(opt_epsilon_o)
+        eps_o = sol.value(opt_epsilon_o)
+        eps_r = sol.value(opt_epsilon_r)
+
+        self.prev_states[agent_id] = next_states_pred
+        self.prev_controls[agent_id] = u_res
+        self.prev_epsilon_o[agent_id] = eps_o 
+        self.prev_epsilon_r[agent_id] = eps_r
   
         return u_res, next_states_pred
     

@@ -35,10 +35,10 @@ class MPC_Base:
         self.control_cache = {agent_id: np.empty((2, self.N)) for agent_id in range(self.num_agent)}
 
         # variables holding previous solutions
-        self.prev_states =  np.zeros((self.N+1, 3))
-        self.prev_controls = np.zeros((self.N, 2))
-        self.prev_epsilon_o = np.zeros((self.N+1, 1))
-        self.prev_epsilon_r = np.zeros((self.N+1, 1))
+        self.prev_states = {agent_id: np.zeros((self.N+1, 3)) for agent_id in range(self.num_agent)}
+        self.prev_controls = {agent_id: np.zeros((self.N, 2)) for agent_id in range(self.num_agent)}
+        self.prev_epsilon_o = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
+        self.prev_epsilon_r = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
         
         self.current_state = {}
         for i in range(self.num_agent):
