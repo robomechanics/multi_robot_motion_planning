@@ -17,14 +17,14 @@ if __name__ == "__main__":
     cost_func_params = {
         'Q':  np.array([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, .1]]),
         'R': np.array([[9.5, 0.0], [0.0, 0.05]]),
-        'P': np.array([[10.0, 0.0], [0.0, 10.0]]),
+        'P': np.array([[15.0, 0.0], [0.0, 15.0]]),
         'Qc': 8,
         'kappa': 3 
     }
     mpc_params = {
         'num_agents': 2,
         'dt': 0.05,
-        'N' : 40,
+        'N' : 60,
         'rob_dia': 0.3,
         'v_lim': 1.0,
         'omega_lim': 1.0,
@@ -47,59 +47,59 @@ if __name__ == "__main__":
     # save_gif_frame_as_png("cluttered_animation.gif", 36)
 
     num_trials = 10
-    num_agents = [4,6,8,10]
+    num_agents = [6, 8, 10, 12, 16]
     algorithms = ["CB-MPC", "PR-MPC", "D-MPC"]
     for num_agent in num_agents:
-        scenario = "cluttered_" + str(num_agent)
-        mpc_params["num_agents"] = num_agent
+        for trial in range(num_trials):
+            scenario = "cluttered_" + str(num_agent)
+            mpc_params["num_agents"] = num_agent
 
-        map_size = (12,12)
-        num_obstacles = 8
-        map = generate_map(map_size, num_obstacles)
+            map_size = (12,12)
+            num_obstacles = 8
+            map = generate_map(map_size, num_obstacles)
 
-        task_gen = Task_Generator(num_agent, map, mpc_params["rob_dia"])
-        initial_states, final_states = task_gen.generate_tasks()
-        print("Generated tasks")
-        
-        env = Environment(map, map_size, initial_states, final_states)
-
-        while True:
-            cbs = CBS(env)
-            cbs_timeout = 10
-            
-            start_time = time.time()
-            solution = None
-            
-            try:
-                solution = cbs.search(cbs_timeout)
-            except TimeoutError:
-                print("CBS search timeout exceeded, regenerating tasks and retrying...")
-                # Regenerate tasks and continue to the next iteration
+            while True:
+                task_gen = Task_Generator(num_agent, map, mpc_params["rob_dia"])
                 initial_states, final_states = task_gen.generate_tasks()
-                env = Environment(map, map_size, initial_states[:mpc_params['num_agents']], final_states[:mpc_params['num_agents']])
-
-                continue
+                print("Generated tasks")
             
-            if solution:
-                ref = discretize_waypoints(solution, mpc_params["dt"], mpc_params["N"])
+                env = Environment(map, map_size, initial_states, final_states)
 
-                for trial in range(num_trials):
-                    mpc = D_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map, ref)
-                    mpc.simulate()
-                    print("Finished MPC")
-                    
+                cbs = CBS(env)
+                cbs_timeout = 10
+                
+                start_time = time.time()
+                solution = None
+                
+                try:
+                    solution = cbs.search(cbs_timeout)
+                except TimeoutError:
+                    print("CBS search timeout exceeded, regenerating tasks and retrying...")
+                    # Regenerate tasks and continue to the next iteration
+                    initial_states, final_states = task_gen.generate_tasks()
+                    env = Environment(map, map_size, initial_states[:mpc_params['num_agents']], final_states[:mpc_params['num_agents']])
+
+                    continue
+                
+                if solution:
+                    ref = discretize_waypoints(solution, mpc_params["dt"], mpc_params["N"])
+
                     mpc = CB_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map, ref)
                     mpc.simulate()
                     print("Finished CB-MPC")
+                    
+                    mpc = D_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map, ref)
+                    mpc.simulate()
+                    print("Finished D-MPC")
 
                     mpc = PR_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map, ref)
                     mpc.simulate()
                     print("Finished PR-MPC")
 
-            else:
-                print("CBS Solution not found")
-        
-            break  # Break out of the loop if CBS search was successful
+                else:
+                    print("CBS Solution not found")
+            
+                break  # Break out of the loop if CBS search was successful
           
 
 
