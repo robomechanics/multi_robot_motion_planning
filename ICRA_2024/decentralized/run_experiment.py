@@ -23,7 +23,7 @@ if __name__ == "__main__":
         'kappa': 3 
     }
     mpc_params = {
-        'num_agents': 8,
+        'num_agents': 12,
         'dt': 0.05,
         'N' : 60,
         'rob_dia': 0.3,
@@ -71,10 +71,13 @@ if __name__ == "__main__":
     scenario = "open_8_robot"
     trial = 1
 
-    # print_metrics_summary("CB-MPC_open_4_robot")
+    visualize_average_metrics()
 
-    mpc = PR_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial)
-    mpc.simulate()
+    # print_metrics_summary("PR-MPC_cluttered_10")
+    # visualize_logged_run("D-MPC_cluttered_10")
+
+    # mpc = CB_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial)
+    # mpc.simulate()
 
     # mpc = Joint_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial)
     # mpc.simulate()

@@ -8,6 +8,7 @@ import pickle
 import matplotlib.pyplot as plt
 from PIL import Image
 from draw import Draw_MPC_point_stabilization_v1
+from collections import OrderedDict
 
 def distance_between_points(p1, p2):
     return np.linalg.norm(p1 - p2)
@@ -102,25 +103,34 @@ def load_metrics(trial_file_path):
         metrics = pickle.load(file)
     return metrics
 
-def generate_grouped_bar_plot(data, x_labels, ylabel, title, legend_labels):
-    num_bars = len(data)
-    num_sub_bars = len(data[0])
+def generate_grouped_bar_plot(data, x_labels, ylabel, title, legend_labels, std=None):
+    print(data)
+    num_bars = len(data) // 3  # Calculate the number of groups
     width = 0.2
-    x_positions = np.arange(num_bars)
-    
+    x_positions = np.arange(len(x_labels))
+
     plt.figure(figsize=(10, 6))
-    
-    for i in range(num_sub_bars):
-        sub_data = [entry[i] for entry in data]
-        sub_x_positions = x_positions + (i - num_sub_bars/2) * width
-        plt.bar(sub_x_positions, sub_data, width=width, label=legend_labels[i])
-    
-    plt.xlabel("Number of Robots")
-    plt.ylabel(ylabel)
-    plt.title(title)
+
+    for i in range(num_bars):
+        start_idx = i * 3
+        sub_data = data[start_idx:start_idx + 3]
+        sub_legend_label = legend_labels[i]
+        
+        sub_x_positions = x_positions + (i - num_bars/2+3*width/2) * width
+        if std:
+            plt.bar(sub_x_positions, sub_data, width=width, yerr=std[start_idx:start_idx + 3], capsize=5, label=sub_legend_label)
+        else:
+            plt.bar(sub_x_positions, sub_data, width=width, label=sub_legend_label)
+
+    plt.xlabel("Number of Robots", fontsize=12)
+    plt.ylabel(ylabel, fontsize=12)
+    plt.title(title, fontsize=14)
     plt.xticks(x_positions, x_labels)
     plt.legend()
     plt.tight_layout()
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
     plt.show()
 
 def visualize_average_metrics(base_folder="results"):
@@ -138,36 +148,60 @@ def visualize_average_metrics(base_folder="results"):
                 continue
             
             algorithm_name = "_".join(parts[:-1])  # Exclude the number of robots
+            algorithm_name = algorithm_name.split('_')[0]
             if num_robots not in robot_metrics:
-                robot_metrics[num_robots] = {
+                robot_metrics[num_robots] = {}
+            
+            if algorithm_name not in robot_metrics[num_robots]:
+                robot_metrics[num_robots][algorithm_name] = {
                     "avg_comp_time": [],
                     "makespan": [],
-                    "success_rate": []
+                    "success": [], 
                 }
 
             algorithm_names.append(parts[0])
-
             for trial_file in os.listdir(os.path.join(base_folder, run_folder)):
                 if trial_file.endswith(".pkl"):
                     trial_file_path = os.path.join(base_folder, run_folder, trial_file)
                     metrics = load_metrics(trial_file_path)
-                    robot_metrics[num_robots]["avg_comp_time"].append(np.mean(metrics["avg_comp_time"]))
-                    robot_metrics[num_robots]["makespan"].append(np.mean(metrics["makespan"]))
+                    robot_metrics[num_robots][algorithm_name]["avg_comp_time"].append(metrics["avg_comp_time"])
+                    robot_metrics[num_robots][algorithm_name]["makespan"].append(metrics["makespan"])
+                    robot_metrics[num_robots][algorithm_name]["success"].append(metrics["success"])
 
     sorted_robot_metrics = {key: robot_metrics[key] for key in sorted(robot_metrics)}
-    
     x_labels = [str(robots) for robots in sorted_robot_metrics.keys()]
-    data_avg_comp_time = [sorted_robot_metrics[robots]["avg_comp_time"] for robots in sorted_robot_metrics]
-    data_makespan = [sorted_robot_metrics[robots]["makespan"] for robots in sorted_robot_metrics]
-    # Uncomment the line below to include success rate
-    # data_success_rate = [sorted_robot_metrics[robots]["success_rate"] for robots in sorted_robot_metrics]
-    
-    # algorithm_names = [f"Algorithm {i+1}" for i in range(len(data_avg_comp_time))]
-    generate_grouped_bar_plot(data_avg_comp_time, x_labels, "Average Computation Time (seconds)", "Average Computation Time", algorithm_names)
-    generate_grouped_bar_plot(data_makespan, x_labels, "Average Makespan (seconds)", "Average Makespan", algorithm_names)
+    algorithm_names = ["CB-MPC", "PR-MPC", "D-MPC"]
+
+    sorted_robot_metrics = OrderedDict(sorted(robot_metrics.items(), key=lambda x: x[0]))
+
+    for num_robots, algorithms in sorted_robot_metrics.items():
+        sorted_algorithms = OrderedDict(sorted(algorithms.items(), key=lambda x: ["CB-MPC", "PR-MPC", "D-MPC"].index(x[0])))
+        sorted_robot_metrics[num_robots] = sorted_algorithms
+
+    data_avg_comp_time = []
+    data_std_comp_time = []
+    data_makespan = []
+    data_std_makespan = []
+    data_success_rate = []
+
+
+    for num_robots, algorithm_dict in sorted_robot_metrics.items():
+        for algorithm_name, metric_dict in algorithm_dict.items():
+    # for num_robots, algorithm_data in sorted_robot_metrics.items():
+            data_avg_comp_time.append(np.mean([time for time in metric_dict["avg_comp_time"] if time != 0.0]))
+            data_std_comp_time.append(np.std([time for time in metric_dict["avg_comp_time"] if time != 0.0]))     
+
+            data_makespan.append(np.mean([time for time in metric_dict["makespan"] if time != 0.0]))     
+            data_std_makespan.append(np.std([time for time in metric_dict["makespan"] if time != 0.0]))
+
+            data_success_rate.append(np.mean(metric_dict["success"]))
+
+    generate_grouped_bar_plot(data_avg_comp_time, x_labels, "Average Computation Time (seconds)", "Average Computation Time", algorithm_names, data_std_comp_time)
+    generate_grouped_bar_plot(data_makespan, x_labels, "Average Makespan (seconds)", "Average Makespan", algorithm_names, data_std_makespan)
+    generate_grouped_bar_plot(data_success_rate, x_labels, "Success Rate", "Success Rate", algorithm_names)
 
 def visualize_logged_run(foldername):
-    file_path = os.path.join("results", foldername, "trial_1.pkl")
+    file_path = os.path.join("results", foldername, "trial_7.pkl")
     with open(file_path, "rb") as file:
         metrics = pickle.load(file)
         state_cache = metrics["state_cache"]
@@ -210,11 +244,7 @@ def print_metrics_summary(foldername):
             print(c_avg)
             print("Success:")
             print(bool(success))
-            print("State cache")
-            print(state_cache)
-            print("===================")
         else:
-            print(state_cache)
             print(bool(success))
             print("===================")
 
@@ -256,8 +286,6 @@ def save_gif_frame_as_png(gif_filename, frame_index):
         print(f"Frame {frame_index} saved as {output_filename}")
     except Exception as e:
         print(f"An error occurred: {e}")
-
-import matplotlib.pyplot as plt
 
 def visualize_scenario(waypoints_dict, occupancy_grid, initial_states, final_states):
     # Create a figure and axis

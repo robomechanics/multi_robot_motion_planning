@@ -76,14 +76,14 @@ class D_MPC(MPC_Base):
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
         # static obstacle constraint
-        if self.map is not None:
-            obstacles = get_obstacle_coordinates(self.map, current_state)
-            for obs in obstacles:
-                obs_x = obs[0]
-                obs_y = obs[1]
-                for l in range(self.N+1):
-                    rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-1.1 + opt_epsilon_o[l]
-                    opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
+        # if self.map is not None:
+        #     obstacles = get_obstacle_coordinates(self.map, current_state)
+        #     for obs in obstacles:
+        #         obs_x = obs[0]
+        #         obs_y = obs[1]
+        #         for l in range(self.N+1):
+        #             rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-1.1 + opt_epsilon_o[l]
+        #             opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
         
         num_rob_constraints = 0.0
         # Add inter robot constraints
@@ -115,7 +115,7 @@ class D_MPC(MPC_Base):
         t_ = time.time()
         sol = opti.solve()
         solve_time = time.time() - t_
-        print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
+        # print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
 
         # obtain the control input
         u_res = sol.value(opt_controls)
@@ -130,7 +130,8 @@ class D_MPC(MPC_Base):
   
         return u_res, next_states_pred
     
-    def simulate(self):      
+    def simulate(self):
+        avg_comp_time = []      
         while(not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
             print(self.num_timestep)
@@ -181,11 +182,12 @@ class D_MPC(MPC_Base):
             self.num_timestep += 1
             time_2 = time.time()
             self.avg_comp_time.append(time_2-time_1)
-        
+
+        avg_comp_time = 0.0
         if self.is_solution_valid(self.state_cache):
             print("Executed solution is GOOD!")
+            avg_comp_time = (sum(self.avg_comp_time) / len(self.avg_comp_time)) / self.num_agent
             self.max_comp_time = max(self.avg_comp_time)
-            self.avg_comp_time = (sum(self.avg_comp_time) / len(self.avg_comp_time)) / self.num_agent
             self.c_avg = (sum(self.c_avg) / len(self.c_avg)) / self.num_agent
             self.traj_length = get_traj_length(self.state_cache)
             self.makespan = self.num_timestep * self.dt
@@ -195,8 +197,10 @@ class D_MPC(MPC_Base):
             self.success = False
 
         run_description = "D-MPC_" + self.scenario 
-        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success)
+        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success)
         self.logger.print_metrics_summary()
+        self.logger.save_metrics_data()
+
         
         # draw function
         # draw_result = Draw_MPC_point_stabilization_v1(

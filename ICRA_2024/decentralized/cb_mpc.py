@@ -116,14 +116,14 @@ class CB_MPC(MPC_Base):
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
         # static obstacle constraint
-        if self.map is not None:
-            obstacles = get_obstacle_coordinates(self.map, current_state)
-            for obs in obstacles:
-                obs_x = obs[0]
-                obs_y = obs[1]
-                for l in range(self.N+1):
-                    rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-1.1 + opt_epsilon_o[l]
-                    opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
+        # if self.map is not None:
+        #     obstacles = get_obstacle_coordinates(self.map, current_state)
+        #     for obs in obstacles:
+        #         obs_x = obs[0]
+        #         obs_y = obs[1]
+        #         for l in range(self.N+1):
+        #             rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-1.1 + opt_epsilon_o[l]
+        #             opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
         
         # Add inter robot constraints
         if inter_rob_constraints:
@@ -179,10 +179,10 @@ class CB_MPC(MPC_Base):
         self.state_cache = {agent_id: [] for agent_id in range(self.num_agent)}
         self.prediction_cache = {agent_id: np.empty((3, self.N+1)) for agent_id in range(self.num_agent)}
         self.control_cache = {agent_id: np.empty((2, self.N)) for agent_id in range(self.num_agent)}
-
+        
         while(not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
-            print(self.num_timestep)
+            # print(self.num_timestep)
             # initial MPC solve
             pool = mp.Pool()
     
@@ -233,7 +233,6 @@ class CB_MPC(MPC_Base):
                         self.current_state[agent_id] = next_state
                         self.state_cache[agent_id].append(next_state)
                     self.c_avg.append(num_rob_constraints)
-                    time_2 = time.time()
                     break
                 else:
                     # get first conflict (rob i, rob j, collision index)
@@ -252,7 +251,7 @@ class CB_MPC(MPC_Base):
                             agent_id = conflict[0]
 
                         new_node.add_constraint(new_constraint)
-                        print(new_node.constraints)
+                        # print(new_node.constraints)
                         u, next_states_pred = self.run_single_mpc(agent_id, self.current_state[agent_id], new_node.constraints)
 
                         num_rob_constraints += self.N - conflict[2]
@@ -261,13 +260,14 @@ class CB_MPC(MPC_Base):
                         new_node.update_cost(self.final_state)
 
                         conflict_tree.append(new_node)
-                time_2 = time.time()
-                self.avg_comp_time.append(time_2-time_1)
-        
+            time_2 = time.time()
+            self.avg_comp_time.append(time_2-time_1)
+            
+        avg_comp_time = 0.0
         if self.is_solution_valid(self.state_cache):
             print("Executed solution is GOOD!")
+            avg_comp_time = (sum(self.avg_comp_time) / len(self.avg_comp_time)) / self.num_agent
             self.max_comp_time = max(self.avg_comp_time)
-            self.avg_comp_time = (sum(self.avg_comp_time) / len(self.avg_comp_time)) / self.num_agent
             self.c_avg = (sum(self.c_avg) / len(self.c_avg)) / self.num_agent
             self.traj_length = get_traj_length(self.state_cache)
             self.makespan = self.num_timestep * self.dt
@@ -277,7 +277,7 @@ class CB_MPC(MPC_Base):
             self.success = False
         
         run_description = "CB-MPC_" + self.scenario 
-        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success)
+        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success)
         self.logger.print_metrics_summary()
         self.logger.save_metrics_data()
         
