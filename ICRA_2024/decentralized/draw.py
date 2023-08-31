@@ -23,12 +23,12 @@ class Draw_MPC_point_stabilization_v1(object):
         self.ax = plt.axes(xlim=(-1, 12), ylim=(-1, 12))
         self.fig.set_size_inches(7, 6.5)
         # self.animation_init()
-        skip_frames = 5
+        skip_frames = 10
         num_frames = len(max(robot_states.values(), key=lambda x: len(x)))
         included_frames = range(0, num_frames, skip_frames)  # Generate indices of included frames
 
         self.ani = animation.FuncAnimation(self.fig, self.animation_loop, included_frames,
-                                           init_func=self.animation_init, interval=100, repeat=False)
+                                           init_func=self.animation_init, interval=50, repeat=True)
 
         if export_fig:
             self.ani.save('./v1.gif', writer='imagemagick', fps=30)
@@ -61,7 +61,9 @@ class Draw_MPC_point_stabilization_v1(object):
         '#98df8a',  # light green
         '#c5b0d5',  # light purple
         '#c49c94',  # light brown
-        '#f7b6d2']
+        '#f7b6d2', 
+        '#aec7e8',  # light blue
+        '#ffbb78']
         
         self.robot_colors = self.generate_colors()
 

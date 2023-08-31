@@ -204,6 +204,7 @@ class CB_MPC(MPC_Base):
                 self.state_cache[agent_id].append(current_state)
 
             self.num_timestep += 1
+            print(self.num_timestep)
 
             # Handling conflict resolution logic
             conflict_tree = []
@@ -215,7 +216,7 @@ class CB_MPC(MPC_Base):
             # loop until conflict tree is empty
             num_rob_constraints = 0.0
             while conflict_tree:
-                print(len(conflict_tree))
+                # print(len(conflict_tree))
                 p = get_best_node(conflict_tree)
                 # conflict_tree.remove(p)
                 conflict_list = self.find_collisions(p)
@@ -277,7 +278,7 @@ class CB_MPC(MPC_Base):
             self.success = False
         
         run_description = "CB-MPC_" + self.scenario 
-        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success)
+        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached)
         self.logger.print_metrics_summary()
         self.logger.save_metrics_data()
         

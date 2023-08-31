@@ -7,7 +7,7 @@ class MetricsLogger:
     def __init__(self):
         self.metrics_data = {}
 
-    def log_metrics(self, run_description, trial_num, state_cache, map, initial_state, final_state, avg_comp_time, max_comp_time, traj_length, makespan, avg_rob_dist, c_avg, success):
+    def log_metrics(self, run_description, trial_num, state_cache, map, initial_state, final_state, avg_comp_time, max_comp_time, traj_length, makespan, avg_rob_dist, c_avg, success, execution_collision, max_time_reached):
         # Log the metrics for a specific algorithm trial
         if run_description not in self.metrics_data:
             self.metrics_data[run_description] = {}
@@ -23,7 +23,9 @@ class MetricsLogger:
                 "traj_length": [],
                 "makespan": [],
                 "avg_rob_dist": [],
-                "success": []
+                "success": [],
+                "execution_collision": [],
+                "max_time_reached": []
             }
         self.metrics_data[run_description][trial_num]["state_cache"] = state_cache
         self.metrics_data[run_description][trial_num]["initial_state"] = initial_state
@@ -36,7 +38,8 @@ class MetricsLogger:
         self.metrics_data[run_description][trial_num]["avg_rob_dist"] = avg_rob_dist
         self.metrics_data[run_description][trial_num]["success"] = success
         self.metrics_data[run_description][trial_num]["c_avg"] = c_avg
-        self.metrics_data[run_description][trial_num]["solution"] = c_avg
+        self.metrics_data[run_description][trial_num]["execution_collision"] = execution_collision
+        self.metrics_data[run_description][trial_num]["max_time_reached"] = max_time_reached
 
     def print_metrics_summary(self):
         # Returns the collected metrics data
@@ -49,6 +52,8 @@ class MetricsLogger:
                 avg_rob_dist = metrics["avg_rob_dist"]
                 success = metrics["success"]
                 c_avg = metrics["c_avg"]
+                execution_collision = metrics["execution_collision"]
+                max_time_reached = metrics["max_time_reached"]
 
                 if(success):
                     print("Avg Comp Time:")
@@ -67,7 +72,12 @@ class MetricsLogger:
                     print(bool(success))
                     print("===================")
                 else:
+                    print("Success:")
                     print(bool(success))
+                    print("Collision:")
+                    print(execution_collision)
+                    print("Timeout:")
+                    print(max_time_reached)
                     print("===================")
 
     def save_metrics_data(self, base_folder="results"):

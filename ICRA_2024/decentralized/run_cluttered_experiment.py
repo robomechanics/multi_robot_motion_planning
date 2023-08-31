@@ -16,7 +16,7 @@ if __name__ == "__main__":
 
     cost_func_params = {
         'Q':  np.array([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, .1]]),
-        'R': np.array([[9.5, 0.0], [0.0, 0.05]]),
+        'R': np.array([[7.5, 0.0], [0.0, 0.05]]),
         'P': np.array([[15.0, 0.0], [0.0, 15.0]]),
         'Qc': 8,
         'kappa': 3 
@@ -47,10 +47,9 @@ if __name__ == "__main__":
     # save_gif_frame_as_png("cluttered_animation.gif", 36)
 
     num_trials = 10
-    num_agents = [6, 8, 10, 12, 16]
-    algorithms = ["CB-MPC", "PR-MPC", "D-MPC"]
+    num_agents = [18]
     for num_agent in num_agents:
-        for trial in range(num_trials):
+        for trial in range(19,20):
             scenario = "cluttered_" + str(num_agent)
             mpc_params["num_agents"] = num_agent
 
@@ -92,9 +91,9 @@ if __name__ == "__main__":
                     mpc.simulate()
                     print("Finished D-MPC")
 
-                    mpc = PR_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map, ref)
-                    mpc.simulate()
-                    print("Finished PR-MPC")
+                    # mpc = PR_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map, ref)
+                    # mpc.simulate()
+                    # print("Finished PR-MPC")
 
                 else:
                     print("CBS Solution not found")

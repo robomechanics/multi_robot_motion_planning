@@ -103,35 +103,53 @@ def load_metrics(trial_file_path):
         metrics = pickle.load(file)
     return metrics
 
-def generate_grouped_bar_plot(data, x_labels, ylabel, title, legend_labels, std=None):
-    print(data)
-    num_bars = len(data) // 3  # Calculate the number of groups
-    width = 0.2
-    x_positions = np.arange(len(x_labels))
+def create_bar_plots(data_structure):
+    input_sizes = list(data_structure.keys())
+    algorithms = ['CB-MPC', 'PR-MPC', 'D-MPC']
+    metrics = ['avg_comp_time', 'max_comp_time', 'makespan', 'success']
+    titles = ['Average Computation Time Per Robot', "Max Computation Time Per Fleet", 'Makespan', 'Success Rate']
+    y_labels = ['Average computation time per robot (sec)', 'Max computation time per fleet (sec)', 'Makespan (sec)', 'Success rate']
 
-    plt.figure(figsize=(10, 6))
-
-    for i in range(num_bars):
-        start_idx = i * 3
-        sub_data = data[start_idx:start_idx + 3]
-        sub_legend_label = legend_labels[i]
+    for idx, metric in enumerate(metrics):
+        plt.figure()
+        grouped_data = {algorithm: [] for algorithm in algorithms}
+        error_data = {algorithm: [] for algorithm in algorithms}
+        labels = []
         
-        sub_x_positions = x_positions + (i - num_bars/2+3*width/2) * width
-        if std:
-            plt.bar(sub_x_positions, sub_data, width=width, yerr=std[start_idx:start_idx + 3], capsize=5, label=sub_legend_label)
-        else:
-            plt.bar(sub_x_positions, sub_data, width=width, label=sub_legend_label)
+        for algorithm in algorithms:
+            for input_size in input_sizes:
+                values = data_structure[input_size][algorithm][metric]
+                if metric in ['avg_comp_time', 'makespan', 'max_comp_time']:
+                    values = [value for value in values if value != 0.0]
+                    avg_metric = np.mean(values)
+                    std_metric = np.std(values) / np.sqrt(len(values))
+                    grouped_data[algorithm].append(avg_metric)
+                    error_data[algorithm].append(std_metric)
+                elif metric == 'success':
+                    success_rate = np.mean(values)
+                    grouped_data[algorithm].append(success_rate)
+                    error_data[algorithm].append(0)  # No error bar for success rate
+            labels.append(algorithm)
 
-    plt.xlabel("Number of Robots", fontsize=12)
-    plt.ylabel(ylabel, fontsize=12)
-    plt.title(title, fontsize=14)
-    plt.xticks(x_positions, x_labels)
-    plt.legend()
-    plt.tight_layout()
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    plt.show()
+        bar_width = 0.2
+        x_positions = np.arange(len(input_sizes))
+        
+        print(grouped_data)
+        for i, algorithm in enumerate(algorithms):
+            plt.bar(x_positions + i * bar_width, grouped_data[algorithm], bar_width, yerr=error_data[algorithm], label=algorithm, capsize=5)
+
+        plt.xlabel('Number of Robots')
+        plt.ylabel(y_labels[idx])
+        plt.title(titles[idx])
+        plt.xticks(x_positions + bar_width * (len(algorithms) - 1) / 2, input_sizes)
+        plt.legend()
+
+        plt.gca().spines['top'].set_visible(False)
+        plt.gca().spines['right'].set_visible(False)
+
+        plt.tick_params(axis='both', which='both', top=False, right=False)
+
+        plt.show()
 
 def visualize_average_metrics(base_folder="results"):
     robot_metrics = {}
@@ -155,6 +173,7 @@ def visualize_average_metrics(base_folder="results"):
             if algorithm_name not in robot_metrics[num_robots]:
                 robot_metrics[num_robots][algorithm_name] = {
                     "avg_comp_time": [],
+                    "max_comp_time":[],
                     "makespan": [],
                     "success": [], 
                 }
@@ -165,6 +184,7 @@ def visualize_average_metrics(base_folder="results"):
                     trial_file_path = os.path.join(base_folder, run_folder, trial_file)
                     metrics = load_metrics(trial_file_path)
                     robot_metrics[num_robots][algorithm_name]["avg_comp_time"].append(metrics["avg_comp_time"])
+                    robot_metrics[num_robots][algorithm_name]["max_comp_time"].append(metrics["max_comp_time"])
                     robot_metrics[num_robots][algorithm_name]["makespan"].append(metrics["makespan"])
                     robot_metrics[num_robots][algorithm_name]["success"].append(metrics["success"])
 
@@ -173,35 +193,11 @@ def visualize_average_metrics(base_folder="results"):
     algorithm_names = ["CB-MPC", "PR-MPC", "D-MPC"]
 
     sorted_robot_metrics = OrderedDict(sorted(robot_metrics.items(), key=lambda x: x[0]))
+    create_bar_plots(sorted_robot_metrics)
 
-    for num_robots, algorithms in sorted_robot_metrics.items():
-        sorted_algorithms = OrderedDict(sorted(algorithms.items(), key=lambda x: ["CB-MPC", "PR-MPC", "D-MPC"].index(x[0])))
-        sorted_robot_metrics[num_robots] = sorted_algorithms
-
-    data_avg_comp_time = []
-    data_std_comp_time = []
-    data_makespan = []
-    data_std_makespan = []
-    data_success_rate = []
-
-
-    for num_robots, algorithm_dict in sorted_robot_metrics.items():
-        for algorithm_name, metric_dict in algorithm_dict.items():
-    # for num_robots, algorithm_data in sorted_robot_metrics.items():
-            data_avg_comp_time.append(np.mean([time for time in metric_dict["avg_comp_time"] if time != 0.0]))
-            data_std_comp_time.append(np.std([time for time in metric_dict["avg_comp_time"] if time != 0.0]))     
-
-            data_makespan.append(np.mean([time for time in metric_dict["makespan"] if time != 0.0]))     
-            data_std_makespan.append(np.std([time for time in metric_dict["makespan"] if time != 0.0]))
-
-            data_success_rate.append(np.mean(metric_dict["success"]))
-
-    generate_grouped_bar_plot(data_avg_comp_time, x_labels, "Average Computation Time (seconds)", "Average Computation Time", algorithm_names, data_std_comp_time)
-    generate_grouped_bar_plot(data_makespan, x_labels, "Average Makespan (seconds)", "Average Makespan", algorithm_names, data_std_makespan)
-    generate_grouped_bar_plot(data_success_rate, x_labels, "Success Rate", "Success Rate", algorithm_names)
-
-def visualize_logged_run(foldername):
-    file_path = os.path.join("results", foldername, "trial_7.pkl")
+def visualize_logged_run(foldername, trial_num):
+    filename = "trial_" + str(trial_num) + ".pkl"
+    file_path = os.path.join("results", foldername, filename)
     with open(file_path, "rb") as file:
         metrics = pickle.load(file)
         state_cache = metrics["state_cache"]
@@ -212,14 +208,14 @@ def visualize_logged_run(foldername):
         draw_result = Draw_MPC_point_stabilization_v1(
             rob_dia=0.3, init_state=initial_state, target_state=final_state, robot_states=state_cache, obs_state={"static": [], "dynamic": []}, map=map)
 
-def print_metrics_summary(foldername):
-    file_path = os.path.join("results", foldername, "trial_1.pkl")
+def print_metrics_summary(foldername, trial_num):
+    filename = "trial_" + str(trial_num) + ".pkl"
+    file_path = os.path.join("results", foldername, filename)
 
     # Load the metrics data from the .pkl file
     with open(file_path, "rb") as file:
         metrics = pickle.load(file)
         # Returns the collected metrics data
-      
         avg_computation_time = metrics["avg_comp_time"]
         max_computation_time = metrics["max_comp_time"]
         traj_length = metrics["traj_length"]
@@ -228,6 +224,8 @@ def print_metrics_summary(foldername):
         success = metrics["success"]
         c_avg = metrics["c_avg"]
         state_cache = metrics["state_cache"]
+        execution_collision = metrics["execution_collision"]
+        max_time_reached = metrics["max_time_reached"]
 
         if(success):
             print("Avg Comp Time:")
@@ -245,7 +243,12 @@ def print_metrics_summary(foldername):
             print("Success:")
             print(bool(success))
         else:
+            print("Success:")
             print(bool(success))
+            print("Collision:")
+            print(execution_collision)
+            print("Max time reached:")
+            print(max_time_reached)
             print("===================")
 
 def shift_to_positive(initial_states, final_states):

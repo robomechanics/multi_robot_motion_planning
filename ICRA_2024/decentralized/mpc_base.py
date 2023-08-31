@@ -54,8 +54,8 @@ class MPC_Base:
         self.num_timestep = 0
 
         # check for failures after simulation is done
-        max_time_reached = False
-        execution_collision = False
+        self.max_time_reached = False
+        self.execution_collision = False
 
         # metrics for logging
         self.algorithm_name = ""
