@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from draw import Draw_MPC_point_stabilization_v1
 from collections import OrderedDict
+import seaborn as sns
+
+sns.set_palette("Set1")
 
 def distance_between_points(p1, p2):
     return np.linalg.norm(p1 - p2)
@@ -111,7 +114,7 @@ def create_bar_plots(data_structure):
     y_labels = ['Average computation time per robot (sec)', 'Max computation time per fleet (sec)', 'Makespan (sec)', 'Success rate']
 
     for idx, metric in enumerate(metrics):
-        plt.figure()
+        plt.figure(figsize=(7,5))
         grouped_data = {algorithm: [] for algorithm in algorithms}
         error_data = {algorithm: [] for algorithm in algorithms}
         labels = []
@@ -138,11 +141,11 @@ def create_bar_plots(data_structure):
         for i, algorithm in enumerate(algorithms):
             plt.bar(x_positions + i * bar_width, grouped_data[algorithm], bar_width, yerr=error_data[algorithm], label=algorithm, capsize=5)
 
-        plt.xlabel('Number of Robots')
-        plt.ylabel(y_labels[idx])
-        plt.title(titles[idx])
+        plt.xlabel('Number of Robots', fontsize=15)
+        plt.ylabel(y_labels[idx], fontsize=15)
+        plt.title(titles[idx], fontsize=15)
         plt.xticks(x_positions + bar_width * (len(algorithms) - 1) / 2, input_sizes)
-        plt.legend()
+        plt.legend(fontsize=14)
 
         plt.gca().spines['top'].set_visible(False)
         plt.gca().spines['right'].set_visible(False)

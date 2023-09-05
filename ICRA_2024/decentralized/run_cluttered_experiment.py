@@ -46,10 +46,10 @@ if __name__ == "__main__":
     # visualize_logged_run("PR-MPC_open_12_robot")
     # save_gif_frame_as_png("cluttered_animation.gif", 36)
 
-    num_trials = 10
-    num_agents = [18]
+    num_trials = 20
+    num_agents = [14]
     for num_agent in num_agents:
-        for trial in range(19,20):
+        for trial in range(num_trials):
             scenario = "cluttered_" + str(num_agent)
             mpc_params["num_agents"] = num_agent
 
@@ -91,9 +91,9 @@ if __name__ == "__main__":
                     mpc.simulate()
                     print("Finished D-MPC")
 
-                    # mpc = PR_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map, ref)
-                    # mpc.simulate()
-                    # print("Finished PR-MPC")
+                    mpc = PR_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map, ref)
+                    mpc.simulate()
+                    print("Finished PR-MPC")
 
                 else:
                     print("CBS Solution not found")
