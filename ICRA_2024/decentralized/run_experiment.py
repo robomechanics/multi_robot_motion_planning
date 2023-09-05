@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     visualize_average_metrics()
 
-    print_metrics_summary("D-MPC_cluttered_12", 19)
+    # print_metrics_summary("D-MPC_cluttered_12", 19)
     # visualize_logged_run("CB-MPC_cluttered_18", 0)
 
     # mpc = CB_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial)

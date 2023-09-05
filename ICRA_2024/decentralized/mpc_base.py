@@ -79,7 +79,7 @@ class MPC_Base:
         return st, u_end, x_n
 
     def prediction_state(self, x0, u, dt, N):
-        # define predition horizon function
+        # define prediction horizon function
         states = np.zeros((N+1, 3))
         states[0, :] = x0
         for i in range(N):
