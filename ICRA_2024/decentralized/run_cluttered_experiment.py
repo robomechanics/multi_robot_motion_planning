@@ -24,7 +24,7 @@ if __name__ == "__main__":
     mpc_params = {
         'num_agents': 2,
         'dt': 0.05,
-        'N' : 60,
+        'N' : 20,
         'rob_dia': 0.3,
         'v_lim': 1.0,
         'omega_lim': 1.0,
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     num_trials = 20
     num_agents = [14]
     for num_agent in num_agents:
-        for trial in range(num_trials):
+        for trial in range(0, 9):
             scenario = "cluttered_" + str(num_agent)
             mpc_params["num_agents"] = num_agent
 

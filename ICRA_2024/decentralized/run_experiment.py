@@ -12,8 +12,11 @@ import matplotlib.pyplot as plt
 from draw import Draw_MPC_point_stabilization_v1
 
 if __name__ == "__main__":
-    initial_states = [[-2.0, 0.0, 0.0], [2.0, 0.0, -np.pi], [-1.0, -2.0, -np.pi/2], [-1.0, 2.0, -np.pi/2], [1.0, -2.0, np.pi/2], [1.0, 2.0, -np.pi/2], [0.0, -2.0, np.pi/2], [0.0, 2.0, np.pi/2], [-2.0, -1.0, 0.0], [2.0, -1.0, np.pi], [-2.0, 1.0, 0.0], [2.0, 1.0, np.pi]]
-    final_states = [[2.0, 0.0, 0.0], [-2.0, 0.0, -np.pi], [-1.0, 2.0, -np.pi/2], [-1.0, -2.0, -np.pi/2], [1.0, 2.0, -np.pi/2], [1.0, -2.0, np.pi/2], [0.0, 2.0, np.pi/2], [0.0, -2.0, np.pi/2], [2.0, -1.0, 0.0], [-2.0, -1.0, np.pi], [2.0, 1.0, 0.0], [-2.0, 1.0, np.pi]]
+    # initial_states = [[-2.0, 0.0, 0.0], [2.0, 0.0, -np.pi], [-1.0, -2.0, -np.pi/2], [-1.0, 2.0, -np.pi/2], [1.0, -2.0, np.pi/2], [1.0, 2.0, -np.pi/2], [0.0, -2.0, np.pi/2], [0.0, 2.0, np.pi/2], [-2.0, -1.0, 0.0], [2.0, -1.0, np.pi], [-2.0, 1.0, 0.0], [2.0, 1.0, np.pi]]
+    # final_states = [[2.0, 0.0, 0.0], [-2.0, 0.0, -np.pi], [-1.0, 2.0, -np.pi/2], [-1.0, -2.0, -np.pi/2], [1.0, 2.0, -np.pi/2], [1.0, -2.0, np.pi/2], [0.0, 2.0, np.pi/2], [0.0, -2.0, np.pi/2], [2.0, -1.0, 0.0], [-2.0, -1.0, np.pi], [2.0, 1.0, 0.0], [-2.0, 1.0, np.pi]]
+
+    initial_states = [[1.0, 1.0, np.pi/2], [1.0, 3.0, -np.pi/2], [1.0, 0.0, np.pi/2], [1.0, 4.0, -np.pi/2], [1.0, 0.5, np.pi/2]]
+    final_states = [[1.0, 3.0, np.pi/2], [1.0, 1.0, -np.pi/2], [1.0, 4.0, np.pi/2], [1.0, 0.0, -np.pi/2], [1.0, 2.5, np.pi/2]]
 
     cost_func_params = {
         'Q':  np.array([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, .1]]),
@@ -23,7 +26,7 @@ if __name__ == "__main__":
         'kappa': 3 
     }
     mpc_params = {
-        'num_agents': 12,
+        'num_agents': 5,
         'dt': 0.05,
         'N' : 60,
         'rob_dia': 0.3,
@@ -39,15 +42,15 @@ if __name__ == "__main__":
     # obs_traj = np.array(create_dynamic_obstacles(mpc_params['obs_sim_timestep'], int(mpc_params['obs_sim_timestep']/mpc_params['dt'])))
     obs_traj = []
     # static_obs = [[-1, 2, 1.0], [1, 2, 1.0], [0, 3, 0.5], [0, 1, 0.5]]
-    static_obs = []
+    static_obs = [[0.5, 2, 0.4], [1.5, 2, 0.4]]
 
     obs = {"static": static_obs, "dynamic": obs_traj}
 
     # save_gif_frame_as_png("cluttered_animation.gif", 57)
 
     map_size = (15,15)
-    obstacle_density = 0.2
-    # map = generate_map(map_size, obstacle_density)
+    obstacle_density = 0.0
+    map = generate_map(map_size, 0)
 
     # task_gen = Task_Generator(mpc_params["num_agents"], map, 2*mpc_params["rob_dia"])
     # initial_states, final_states = task_gen.generate_tasks()
@@ -59,7 +62,7 @@ if __name__ == "__main__":
 
     # env = Environment(map, map_size, initial_states[:mpc_params['num_agents']], final_states[:mpc_params['num_agents']])
     # cbs = CBS(env)
-    # solution = cbs.search()
+    # solution = cbs.search(20)
     
     # ref = discretize_waypoints(solution, mpc_params["dt"], mpc_params["N"])
     
@@ -68,16 +71,19 @@ if __name__ == "__main__":
 
     # visualize_average_metrics()
 
-    scenario = "open_8_robot"
+    scenario = "narrow_2_robot"
     trial = 1
 
-    visualize_average_metrics()
+    # visualize_average_metrics()
 
-    # print_metrics_summary("D-MPC_cluttered_12", 19)
-    # visualize_logged_run("CB-MPC_cluttered_18", 0)
+    # print_metrics_summary("D-MPC_cluttered_14", 8)
+    # visualize_logged_run("CB-MPC_narrow_2_robot", 1)
 
-    # mpc = CB_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial)
+    # mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map=map, ref=ref)
     # mpc.simulate()
+
+    mpc = CB_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map=map)
+    mpc.simulate()
 
     # mpc = Joint_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial)
     # mpc.simulate()

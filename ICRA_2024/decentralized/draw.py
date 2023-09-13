@@ -20,15 +20,15 @@ class Draw_MPC_point_stabilization_v1(object):
 
         self.rob_radius = rob_dia / 2.0
         self.fig = plt.figure()
-        self.ax = plt.axes(xlim=(-1, 12), ylim=(-1, 12))
+        self.ax = plt.axes(xlim=(-1, 4), ylim=(-1, 5))
         self.fig.set_size_inches(7, 6.5)
         # self.animation_init()
-        skip_frames = 10
+        skip_frames = 1
         num_frames = len(max(robot_states.values(), key=lambda x: len(x)))
         included_frames = range(0, num_frames, skip_frames)  # Generate indices of included frames
-
+        
         self.ani = animation.FuncAnimation(self.fig, self.animation_loop, included_frames,
-                                           init_func=self.animation_init, interval=50, repeat=True)
+                                           init_func=self.animation_init, interval=75, repeat=True)
 
         if export_fig:
             self.ani.save('./v1.gif', writer='imagemagick', fps=30)
@@ -39,7 +39,7 @@ class Draw_MPC_point_stabilization_v1(object):
         return random.sample(self.all_colors, num_robots)
 
     def animation_init(self):
-        self.ax.imshow(self.map, cmap='gray_r', origin='lower')
+        # self.ax.imshow(self.map, cmap='gray_r', origin='lower')
 
         self.target_circles = []
         self.target_arrs = []

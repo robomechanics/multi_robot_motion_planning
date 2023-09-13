@@ -96,22 +96,12 @@ class CB_MPC(MPC_Base):
                 robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
                                         ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 100000 * opt_epsilon_o[k] + 100000 * opt_epsilon_r[k]
 
-            
-        # for l in range(self.num_agent):
-        #     if l == agent_id:
-        #         continue
-        #     this_rob = self.current_state[agent_id]
-        #     other_rob = self.current_state[l]
-        #     distance = math.sqrt((this_rob[0] - other_rob[0])**2 + (this_rob[1] - other_rob[1])**2)
-        #     if distance < 0.5:
-        #         collision_cost += distance
-
         total_cost = robot_cost + 1000 * collision_cost
         opti.minimize(total_cost)
 
         # boundrary and control conditions
-        opti.subject_to(opti.bounded(-12.0, opt_x, 12.0))
-        opti.subject_to(opti.bounded(-12.0, opt_y, 12.0))
+        opti.subject_to(opti.bounded(0.5, opt_x, 2.5))
+        opti.subject_to(opti.bounded(0.0, opt_y, 5))
         opti.subject_to(opti.bounded(-self.v_lim, v, self.v_lim))
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
@@ -124,6 +114,15 @@ class CB_MPC(MPC_Base):
         #         for l in range(self.N+1):
         #             rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-1.1 + opt_epsilon_o[l]
         #             opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
+        if self.map is not None:
+            for obs in self.obs["static"]:
+                obs_x = obs[0]
+                obs_y = obs[1]
+                obs_dia = obs[2]
+                for l in range(self.N+1):
+                    rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2) - obs_dia + opt_epsilon_o[l]
+                    opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
+        
         
         # Add inter robot constraints
         if inter_rob_constraints:
@@ -283,5 +282,5 @@ class CB_MPC(MPC_Base):
         self.logger.save_metrics_data()
         
         # Draw function
-        # draw_result = Draw_MPC_point_stabilization_v1(
-        #     rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs)
+        draw_result = Draw_MPC_point_stabilization_v1(
+            rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs, map=self.map)
