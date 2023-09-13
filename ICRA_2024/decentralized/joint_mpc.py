@@ -8,7 +8,7 @@ from utils import *
 from metrics_logger import MetricsLogger
 
 class Joint_MPC:
-    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, ref=None):
+    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, ref=None, map=None):
         self.num_agent = mpc_params['num_agents']
         self.dt = mpc_params['dt']
         self.N = mpc_params['N']
@@ -39,6 +39,7 @@ class Joint_MPC:
         self.static_obs = obs["static"]
 
         self.ref = ref
+        self.map = map
 
         self.num_timestep = 0
 
@@ -57,7 +58,16 @@ class Joint_MPC:
         self.c_avg = []
         self.success = False
 
+        self.execution_collision = False
+        self.max_time_reached = False
+
         self.logger = MetricsLogger()
+
+          # variables holding previous solutions
+        self.prev_states = np.zeros((self.N+1, 3*self.num_agent)) 
+        self.prev_controls = np.zeros((self.N, 2*self.num_agent)) 
+        self.prev_epsilon_o = np.zeros((self.N+1, self.num_agent))
+        self.prev_epsilon_r = np.zeros((self.N+1, self.num_agent))
 
     def shift_movement(self, x0, u, x_n, f):
         next_state = np.zeros((self.num_agent, 3))
@@ -85,6 +95,9 @@ class Joint_MPC:
         [u_[0]*np.cos(x_[2]), u_[0]*np.sin(x_[2]), u_[1]])
     
     def are_all_agents_arrived(self):
+        print(self.current_state)
+        print(self.final_state)
+        print("------")
         if(np.linalg.norm(self.current_state-self.final_state) > self.goal_tolerence):
             return False
         return True
@@ -130,7 +143,10 @@ class Joint_MPC:
         v = opt_controls[:, ::2]
         omega = opt_controls[:, 1::2]
         
-        opt_epsilon_o = opti.variable(self.N+1, self.num_agent)
+        # opt_epsilon_o = opti.variable(self.N+1, self.num_agent)
+
+        opti.set_initial(opt_states, self.prev_states)
+        opti.set_initial(opt_controls, self.prev_controls)
 
         # parameters
         opt_x0 = opti.parameter(3*self.num_agent)
@@ -144,8 +160,9 @@ class Joint_MPC:
                 start_idx = agent * 3
                 end_idx = start_idx + 3
 
-                if end_idx >= opt_states.shape[1]:
+                if end_idx > opt_states.shape[1]:
                     break
+
                 agent_states = opt_states[j, start_idx:end_idx]
                 agent_controls = opt_controls[j, agent*2:agent*2+2]
         
@@ -153,7 +170,7 @@ class Joint_MPC:
 
                 opti.subject_to(opt_states[j+1, start_idx:end_idx] == x_next)
             
-                opti.subject_to(opti.bounded(0, opt_epsilon_o[j, agent], ca.inf))
+                # opti.subject_to(opti.bounded(0, opt_epsilon_o[j, agent], ca.inf))
 
         # define the cost function
         robot_cost = 0  # cost
@@ -172,36 +189,61 @@ class Joint_MPC:
                 agent_states = opt_states[k, start_idx:end_idx]
                 agent_controls = opt_controls[k, agent*2:agent*2+2]
                 agent_opt_xs = opt_xs[start_idx:end_idx]
-                agent_opt_epsilon_o = opt_epsilon_o[k, agent]
+                # agent_opt_epsilon_o = opt_epsilon_o[k, agent]
                 
                 state_diff = agent_states - agent_opt_xs.T
                 
                 control_cost = ca.mtimes([agent_controls, R, agent_controls.T])
                 state_cost = ca.mtimes([state_diff, Q, state_diff.T])
-                epsilon_cost = 100000 * np.dot(agent_opt_epsilon_o, agent_opt_epsilon_o.T)
+
+                # epsilon_cost = 100000 * np.dot(agent_opt_epsilon_o, agent_opt_epsilon_o.T)
                 
-                robot_cost += state_cost + control_cost + epsilon_cost
+                robot_cost += state_cost + control_cost
 
                 total_cost = robot_cost 
         
         opti.minimize(total_cost)
 
         # boundrary and control conditions
-        opti.subject_to(opti.bounded(-10.0, opt_x, 10.0))
-        opti.subject_to(opti.bounded(-10.0, opt_y, 10.0))
+        opti.subject_to(opti.bounded(-12.0, opt_x, 12.0))
+        opti.subject_to(opti.bounded(-12.0, opt_y, 12.0))
         opti.subject_to(opti.bounded(-self.v_lim, v, self.v_lim))
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
         # static obstacle constraint
-        for obs in self.static_obs:
-            obs_x = obs[0]
-            obs_y = obs[1]
-            obs_dia = obs[2]
-            for l in range(self.N+1):
-                rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-self.rob_dia/2.0-obs_dia/2.0 + opt_epsilon_o[l]
-                opti.subject_to(self.opti.bounded(0.0, rob_obs_constraints_, 10.0))
+        # for obs in self.static_obs:
+        #     for agent in range(self.num_agent):
+        #         obs_x = obs[0]
+        #         obs_y = obs[1]
+        #         obs_dia = obs[2]
+        #         start = agent * 3
+        #         end = start + 3
 
-        opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
+        #         for l in range(self.N+1):
+        #             state = opt_states[l, start:end]
+        #             print(state.shape)
+        #             rob_obs_constraints_ = ca.sqrt((state[0]-obs_x)**2+(state[1]-obs_y)**2)-self.rob_dia/2.0-obs_dia/2.0 
+        #             opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
+
+        # for k in range(self.N):
+        #     for agent1 in range(self.num_agent):
+        #         for agent2 in range(agent1 + 1, self.num_agent):
+        #             start_1 = agent1 * 3
+        #             end_1 = start_1 + 3
+
+        #             start_2 = agent2 * 3
+        #             end_2 = start_2 + 3
+
+        #             state_1 = opt_states[k, start_1:end_1]
+        #             state_2 = opt_states[k, start_2:end_2]
+
+        #             # Calculate the Euclidean distance between the positions (x_i, y_i) and (x_j, y_j)
+        #             rob_rob_constraints_ = ca.sqrt((state_1[:,0] - state_2[:,0])**2 + (state_1[:,1] - state_2[:,1])**2) - self.rob_dia
+                    
+        #             # Add the constraint to the optimization problem
+        #             opti.subject_to(opti.bounded(0.0, rob_rob_constraints_, ca.inf))
+
+        opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 1, 'print_time': 0,
                             'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
                             'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
 
@@ -210,8 +252,7 @@ class Joint_MPC:
         for agent in range(self.num_agent):
             opti.set_value(opt_xs[agent*3:agent*3+3], self.final_state[agent])
             opti.set_value(opt_x0[agent*3:agent*3+3], self.current_state[agent])
-                        
-        # solve the optimization problem
+
         t_ = time.time()
         sol = opti.solve()
         solve_time = time.time() - t_
@@ -220,13 +261,19 @@ class Joint_MPC:
         # obtain the control input
         u_res = sol.value(opt_controls)
         next_states_pred = sol.value(opt_states)
-        epsilon_o = sol.value(opt_epsilon_o)
+        # epsilon_r = sol.value(opt_epsilon_r)
+
+        self.prev_states = next_states_pred
+        self.prev_controls = u_res
   
         return u_res, next_states_pred
-      
+
+
     def simulate(self):
         # parallelized implementation
         agent_list = list(range(self.num_agent))
+        self.state_cache = {agent_id: [] for agent_id in range(self.num_agent)}
+
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
             print(self.num_timestep)
@@ -239,7 +286,9 @@ class Joint_MPC:
             self.prediction_cache = next_states_pred
             self.control_cache = u
             self.current_state = next_state
-            self.state_cache.append(next_state)
+
+            for agent_id in range(self.num_agent):
+                self.state_cache[agent_id].append(self.current_state[agent_id,:])
             
             self.num_timestep += 1
             time_2 = time.time()
@@ -257,10 +306,11 @@ class Joint_MPC:
             self.success = False
         
         run_description = "Joint_MPC_" + self.scenario 
-        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success)
+
+        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached)
         self.logger.print_metrics_summary()
         self.logger.save_metrics_data()
         
         # draw function
         draw_result = Draw_MPC_point_stabilization_v1(
-            rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs)
+            rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs, map=self.map)

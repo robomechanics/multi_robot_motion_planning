@@ -64,13 +64,13 @@ class MPC(MPC_Base):
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
         # static obstacle constraint
-        for obs in self.static_obs:
-            obs_x = obs[0]
-            obs_y = obs[1]
-            obs_dia = obs[2]
-            for l in range(self.N+1):
-                rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-self.rob_dia/2.0-obs_dia/2.0 + opt_epsilon_o[l]
-                opti.subject_to(self.opti.bounded(0.0, rob_obs_constraints_, 10.0))
+        # for obs in self.static_obs:
+        #     obs_x = obs[0]
+        #     obs_y = obs[1]
+        #     obs_dia = obs[2]
+        #     for l in range(self.N+1):
+        #         rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-self.rob_dia/2.0-obs_dia/2.0 + opt_epsilon_o[l]
+        #         opti.subject_to(self.opti.bounded(0.0, rob_obs_constraints_, 10.0))
 
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
                             'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
@@ -84,9 +84,9 @@ class MPC(MPC_Base):
         opti.set_value(opt_x0, current_state)
 
         # set optimizing target withe init guess
-        opti.set_initial(opt_controls, self.prev_controls)  # (N, 2)
-        opti.set_initial(opt_states, self.prev_states)  # (N+1, 3)
-        opti.set_initial(opt_epsilon_o, self.prev_epsilon_o)
+        opti.set_initial(opt_controls, self.prev_controls[agent_id])  # (N, 2)
+        opti.set_initial(opt_states, self.prev_states[agent_id])  # (N+1, 3)
+        opti.set_initial(opt_epsilon_o, self.prev_epsilon_o[agent_id])
                     
         # solve the optimization problem
         t_ = time.time()
@@ -151,7 +151,8 @@ class MPC(MPC_Base):
             self.success = False
         
         run_description = "MPC_" + self.scenario 
-        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached)
+
+        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached)
         self.logger.print_metrics_summary()
         self.logger.save_metrics_data()
         

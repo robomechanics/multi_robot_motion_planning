@@ -137,7 +137,6 @@ def create_bar_plots(data_structure):
         bar_width = 0.2
         x_positions = np.arange(len(input_sizes))
         
-        print(grouped_data)
         for i, algorithm in enumerate(algorithms):
             plt.bar(x_positions + i * bar_width, grouped_data[algorithm], bar_width, yerr=error_data[algorithm], label=algorithm, capsize=5)
 

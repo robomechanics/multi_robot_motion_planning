@@ -82,7 +82,15 @@ class PR_MPC(MPC_Base):
         #     for l in range(self.N+1):
         #         rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-self.rob_dia/2.0 - obs_dia/2.0 - self.safety_margin/2.0 + opt_epsilon_o[l]
         #         opti.subject_to(self.opti.bounded(0.0, rob_obs_constraints_, ca.inf))
-        
+        if self.map is not None:
+            for obs in self.obs["static"]:
+                obs_x = obs[0]
+                obs_y = obs[1]
+                obs_dia = obs[2]
+                for l in range(self.N+1):
+                    rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2) - obs_dia + opt_epsilon_o[l]
+                    opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
+
         num_rob_constraints = 0.0
         if inter_rob_constraints:
             for other_rob in inter_rob_constraints:         
