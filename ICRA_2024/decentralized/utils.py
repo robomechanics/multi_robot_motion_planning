@@ -199,7 +199,7 @@ def visualize_average_metrics(base_folder="results"):
 
 def visualize_logged_run(foldername, trial_num):
     filename = "trial_" + str(trial_num) + ".pkl"
-    file_path = os.path.join("results", foldername, filename)
+    file_path = os.path.join("open", foldername, filename)
     with open(file_path, "rb") as file:
         metrics = pickle.load(file)
         state_cache = metrics["state_cache"]
