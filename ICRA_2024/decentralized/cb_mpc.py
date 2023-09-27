@@ -100,8 +100,8 @@ class CB_MPC(MPC_Base):
         opti.minimize(total_cost)
 
         # boundrary and control conditions
-        opti.subject_to(opti.bounded(0.5, opt_x, 2.5))
-        opti.subject_to(opti.bounded(0.0, opt_y, 5))
+        opti.subject_to(opti.bounded(-5, opt_x, 12))
+        opti.subject_to(opti.bounded(-5, opt_y, 12))
         opti.subject_to(opti.bounded(-self.v_lim, v, self.v_lim))
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
@@ -114,14 +114,14 @@ class CB_MPC(MPC_Base):
         #         for l in range(self.N+1):
         #             rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-1.1 + opt_epsilon_o[l]
         #             opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
-        if self.map is not None:
-            for obs in self.obs["static"]:
-                obs_x = obs[0]
-                obs_y = obs[1]
-                obs_dia = obs[2]
-                for l in range(self.N+1):
-                    rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2) - obs_dia + opt_epsilon_o[l]
-                    opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
+        # if self.map is not None:
+        #     for obs in self.obs["static"]:
+        #         obs_x = obs[0]
+        #         obs_y = obs[1]
+        #         obs_dia = obs[2]
+        #         for l in range(self.N+1):
+        #             rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2) - obs_dia + opt_epsilon_o[l]
+        #             opti.subject_to(opti.bounded(0.0, rob_obs_constraints_, ca.inf))
         
         
         # Add inter robot constraints

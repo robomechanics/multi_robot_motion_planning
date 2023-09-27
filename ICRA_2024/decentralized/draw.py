@@ -23,12 +23,12 @@ class Draw_MPC_point_stabilization_v1(object):
         self.ax = plt.axes(xlim=(-1, 4), ylim=(-1, 5))
         self.fig.set_size_inches(7, 6.5)
         # self.animation_init()
-        skip_frames = 1
+        skip_frames = 3
         num_frames = len(max(robot_states.values(), key=lambda x: len(x)))
         included_frames = range(0, num_frames, skip_frames)  # Generate indices of included frames
         
         self.ani = animation.FuncAnimation(self.fig, self.animation_loop, included_frames,
-                                           init_func=self.animation_init, interval=75, repeat=True)
+                                           init_func=self.animation_init, interval=75, repeat=False)
 
         if export_fig:
             self.ani.save('./v1.gif', writer='imagemagick', fps=30)
@@ -36,7 +36,7 @@ class Draw_MPC_point_stabilization_v1(object):
 
     def generate_colors(self):
         num_robots = min(self.num_agents, len(self.all_colors))
-        return random.sample(self.all_colors, num_robots)
+        return self.all_colors[:num_robots]
 
     def animation_init(self):
         # self.ax.imshow(self.map, cmap='gray_r', origin='lower')
@@ -77,7 +77,7 @@ class Draw_MPC_point_stabilization_v1(object):
 
             target_arr = mpatches.Arrow(target_state[0], target_state[1],
                                         self.rob_radius * np.cos(target_state[2]),
-                                        self.rob_radius * np.sin(target_state[2]), width=0.001)
+                                        self.rob_radius * np.sin(target_state[2]), width=0.1)
             # self.ax.add_patch(target_arr)
             self.target_arrs.append(target_arr)
 
@@ -88,13 +88,14 @@ class Draw_MPC_point_stabilization_v1(object):
 
             robot_arr = mpatches.Arrow(init_state[0], init_state[1],
                                        self.rob_radius * np.cos(init_state[2]),
-                                       self.rob_radius * np.sin(init_state[2]), width=0.001, color=color)
+                                       self.rob_radius * np.sin(init_state[2]), width=0.001, color=color, alpha=0)
             self.ax.add_patch(robot_arr)
             self.robot_arrs.append(robot_arr)
 
             if self.static_obs:
                 for obs in self.static_obs:
-                    self.obs_static_body = plt.Circle(obs[0:2], obs[2]/2, color='g', fill=True)
+                    self.obs_static_body = plt.Circle(obs[0:2], obs[2]/2, color='r', fill=True)
+                    self.obs_static_body.set_alpha(0.5)
                     self.obs_artist = self.ax.add_artist(self.obs_static_body)
             else:
                 self.static_obs = []
@@ -118,10 +119,11 @@ class Draw_MPC_point_stabilization_v1(object):
                 position = robot_states[indx][:2]
                 orientation = robot_states[indx][2]
 
+                alpha = min(1.0, indx / len(robot_states))
                 self.robot_bodies[i].center = position
 
                 robot_arr = mpatches.Arrow(position[0], position[1], self.rob_radius * np.cos(orientation),
-                                            self.rob_radius * np.sin(orientation), width=0.001, color=color)
+                                            self.rob_radius * np.sin(orientation), width=0.1, color=color, alpha=alpha)
 
                 # Remove the previous arrow and add the new one
                 # if self.robot_arrs[i] is not None:
