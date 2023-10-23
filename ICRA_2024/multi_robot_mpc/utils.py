@@ -9,9 +9,6 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from draw import Draw_MPC_point_stabilization_v1
 from collections import OrderedDict
-import seaborn as sns
-
-sns.set_palette("Set1")
 
 def distance_between_points(p1, p2):
     return np.linalg.norm(p1 - p2)
