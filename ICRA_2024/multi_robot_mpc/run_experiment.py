@@ -79,11 +79,11 @@ if __name__ == "__main__":
     # print_metrics_summary("CB-MPC_open_12_robot", 1)
     # visualize_logged_run("CB-MPC_open_12_robot", 1)
 
-    # mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map=map, ref=ref)
-    # mpc.simulate()
-
-    mpc = CB_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map=map)
+    mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map=map)
     mpc.simulate()
+
+    # mpc = CB_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map=map)
+    # mpc.simulate()
 
     # mpc = Joint_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial)
     # mpc.simulate()

@@ -42,14 +42,15 @@ class MPC(MPC_Base):
         R = self.cost_func_params['R']
         P = self.cost_func_params['P']
 
-        ref_seg = self.extract_trajectory_segment(current_state)
-        ref = np.array([[d['x'], d['y']] for d in ref_seg[agent_id]])
+        # ref_seg = self.extract_trajectory_segment(current_state)
+        # ref = np.array([[d['x'], d['y']] for d in ref_seg[agent_id]])
 
         for k in range(self.N):
             if self.ref:
-                curr_ref = ref[k,:].reshape(1,2)
-                robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
-                                        ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + ca.mtimes([(opt_states[k, :2]-curr_ref), P, (opt_states[k, :2]-curr_ref).T]) + 100000 * opt_epsilon_o[k]
+                print("something")
+                # curr_ref = ref[k,:].reshape(1,2)
+                # robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
+                #                         ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + ca.mtimes([(opt_states[k, :2]-curr_ref), P, (opt_states[k, :2]-curr_ref).T]) + 100000 * opt_epsilon_o[k]
             else: 
                 robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
                                         ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 100000 * opt_epsilon_o[k]
@@ -136,6 +137,7 @@ class MPC(MPC_Base):
                 self.state_cache[agent_id].append(next_state)
 
             self.num_timestep += 1
+            print(self.num_timestep)
             time_2 = time.time()
             self.avg_comp_time.append(time_2-time_1)
 
