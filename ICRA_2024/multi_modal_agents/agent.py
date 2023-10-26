@@ -3,8 +3,8 @@ from visualizer import Visualizer
 import matplotlib.pyplot as plt
 
 class UncontrolledAgent:
-    def __init__(self, initial_state, dt=0.05, action_duration=20, v_noise_std=0.08, 
-                 omega_noise_std=0.08, prediction_horizon=10):
+    def __init__(self, initial_state, dt=0.05, action_duration=20, v_noise_std=0.1, 
+                 omega_noise_std=0.1, prediction_horizon=10):
         """
         :param initial_state: [x, y, theta] - initial position and orientation
         :param dt: time step
@@ -111,8 +111,8 @@ class UncontrolledAgent:
         return np.random.choice(self.action_space, p=prob_distribution)
 
 if __name__ == "__main__":
-    # Number of time steps to simulate
-    num_steps = 1
+    # # Number of time steps to simulate
+    num_steps = 50
 
     # Create an instance of the UncontrolledAgent class with initial conditions
     initial_state = [0.0, 0.0, 0.0]  # [x, y, theta]
@@ -124,10 +124,9 @@ if __name__ == "__main__":
         state = agent.step()
         trajectory.append((state[0], state[1]))
     
-    print(agent.traj_cache)
-
     # Create an AgentVisualizer instance with the precomputed trajectory
     visualizer = Visualizer(trajectory, agent.traj_cache)
 
     # Show the animation
     plt.show()
+
