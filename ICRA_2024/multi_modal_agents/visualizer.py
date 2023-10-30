@@ -1,39 +1,36 @@
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Circle
-
+import numpy as np
 class Visualizer:
-    def __init__(self, trajectory, predicted_trajectories):
-        self.trajectory = trajectory
-        self.predicted_trajectories = predicted_trajectories
+    def __init__(self, trajectories, actions, n_prediction_steps):
+        self.trajectories = trajectories
+        self.actions = actions
+        self.n_prediction_steps = n_prediction_steps
         
-        # Initialize the figure and axis
-        self.fig, self.ax = plt.subplots()
-        self.ax.set_xlim(-1.0, 1.0)  # Set initial x-axis limits
-        self.ax.set_ylim(-1.0, 1.0)  # Set initial y-axis limits
+        # Initialize the plot
+        self.fig, self.ax = plt.subplots(figsize=(6, 6))
+        self.lines = [self.ax.plot([], [])[0] for _ in actions]
+        self.circles = [[self.ax.add_patch(plt.Circle((0, 0), 0, color='gray', alpha=0.3)) for _ in range(n_prediction_steps)] for _ in actions]
 
-        # Create an empty plot for the agent's trajectory
-        self.trajectory_plot, = self.ax.plot([], [], label='Uncontrolled Agent')
+        self.ax.set_xlim([-1, 2])
+        self.ax.set_ylim([-1, 2])
+        self.ax.set_aspect('equal')
+        self.ax.grid(True)
 
-        # Create an empty circle for the agent's current position
-        self.agent_circle = Circle((0, 0), 0.03, fill=True)
-        self.ax.add_patch(self.agent_circle)
+    def animate(self, i):
+        for j, traj in enumerate(self.trajectories):
+            prediction = traj[i]
+            xs, ys, noises_x, noises_y = zip(*prediction)
+            self.lines[j].set_data(xs, ys)
+            
+            for k, (x, y, noise_x, noise_y) in enumerate(prediction):
+                circle = self.circles[j][k]
+                circle.center = (x, y)
+                circle.radius = np.sqrt(noise_x**2 + noise_y**2)
+                
+        return [item for sublist in self.circles for item in sublist] + self.lines
 
-        # Set axis labels and legend
-        self.ax.set_xlabel('X Position')
-        self.ax.set_ylabel('Y Position')
-        self.ax.legend()
-
-        # Create an animation
-        self.ani = FuncAnimation(self.fig, self.update, frames=len(self.trajectory), repeat=False)
-
-    def update(self, frame):
-        # Update the trajectory plot
-        self.trajectory_plot.set_data(*zip(*self.trajectory[:frame+1]))
-
-        # Update the agent's current position
-        x, y = self.trajectory[frame]
-        self.agent_circle.center = (x, y)
-
-        # Redraw the legend to include predicted trajectories
-        self.ax.legend()
+    def show(self):
+        ani = FuncAnimation(self.fig, self.animate, frames=len(self.trajectories[0]), interval=200, blit=True)
+        plt.show()
