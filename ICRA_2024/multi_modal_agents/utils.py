@@ -1,6 +1,5 @@
 import random 
 import numpy as np
-from node import Node
 import math
 import numpy as np
 import os 
@@ -56,10 +55,6 @@ def get_traj_length(state_cache):
             traj_len += dx
 
     return traj_len
-
-def get_best_node(conflict_tree):
-    lowest_cost_node = min(conflict_tree, key=lambda node: node.cost)
-    return lowest_cost_node
 
 def generate_map(map_size, num_obstacles):
     num_cells = map_size[0] * map_size[1]    

@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from visualizer import Visualizer
-
 class UncontrolledAgent:
   def __init__(self, dt=0.05, T=10, H=1.0, action_duration=3.0):
     self.dt = dt
