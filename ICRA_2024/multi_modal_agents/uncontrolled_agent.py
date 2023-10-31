@@ -90,5 +90,7 @@ class UncontrolledAgent:
 agent = UncontrolledAgent()
 traj = agent.simulate_diff_drive()
 
+predicitons = agent.get_gmm_predictions()
+
 vis = Visualizer(traj, agent.actions)
 vis.show()
