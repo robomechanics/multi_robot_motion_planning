@@ -2,16 +2,16 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Circle
 import numpy as np
+
 class Visualizer:
-    def __init__(self, trajectories, actions, n_prediction_steps):
+    def __init__(self, trajectories, actions):
         self.trajectories = trajectories
         self.actions = actions
-        self.n_prediction_steps = n_prediction_steps
         
         # Initialize the plot
         self.fig, self.ax = plt.subplots(figsize=(6, 6))
         self.lines = [self.ax.plot([], [])[0] for _ in actions]
-        self.circles = [[self.ax.add_patch(plt.Circle((0, 0), 0, color='gray', alpha=0.3)) for _ in range(n_prediction_steps)] for _ in actions]
+        self.circles = [[self.ax.add_patch(plt.Circle((0, 0), 0, color='gray', alpha=0.3)) for _ in traj] for traj in trajectories]
 
         self.ax.set_xlim([-1, 2])
         self.ax.set_ylim([-1, 2])
@@ -23,7 +23,7 @@ class Visualizer:
             prediction = traj[i]
             xs, ys, noises_x, noises_y = zip(*prediction)
             self.lines[j].set_data(xs, ys)
-            
+                
             for k, (x, y, noise_x, noise_y) in enumerate(prediction):
                 circle = self.circles[j][k]
                 circle.center = (x, y)

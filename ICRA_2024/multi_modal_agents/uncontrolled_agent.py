@@ -2,17 +2,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from visualizer import Visualizer
+
 class UncontrolledAgent:
   def __init__(self, dt=0.05, T=10, H=1.0, action_duration=3.0):
     self.dt = dt
     self.T = T 
     self.H = H
     self.action_duration = action_duration
-    self.action_prob = [0.2, 0.6, 0.2]
+    self.action_prob = [0.15, 0.7, 0.15]
     self.actions = [
-  (np.random.uniform(0.4, 0.6), np.random.uniform(0.7, 0.8)), 
-  (np.random.uniform(0.4, 0.6), np.random.uniform(0.0, 0.0)), 
-  (np.random.uniform(0.4, 0.6), np.random.uniform(-0.7, -0.8))]
+  (np.random.normal(0.5, 0.05), np.random.normal(0.7, 0.1)), 
+  (np.random.normal(0.5, 0.05), np.random.normal(0.0, 0.01)), 
+  (np.random.normal(0.5, 0.05), np.random.normal(-0.7, 0.1))]
     self.noise_range = [-0.01, 0.01]
         
   def propagate_state(self, x, y, theta, v, omega):
@@ -54,15 +55,40 @@ class UncontrolledAgent:
         current_action_duration += self.dt
     
     return trajectories
+  
+  def get_gmm_predictions(self):
+      # Single dictionary for the single agent
+      agent_prediction = {}
 
-dt = 0.05
-T = 10.0
-H = 1.0
-n_prediction_steps = int(H/dt)  # Compute the number of prediction steps based on the horizon and time-step
+      # Precompute variances based on the standard deviations used to generate the actions
+      v_variance = 0.05**2
+      omega_variances = [0.1**2, 0.01**2, 0.1**2]  # Variances for omega corresponding to each action
 
-predictor = UncontrolledAgent()
-trajectories = predictor.simulate_diff_drive()
+      # Calculate the mean and covariance for each action at each timestep within the prediction horizon
+      for mode, (v, omega) in enumerate(self.actions):
+          # Mean and covariance vectors for the entire prediction horizon
+          means = []
+          covariances = []
 
-# Visualization setup
-visualizer = Visualizer(trajectories, predictor.actions, n_prediction_steps)
-visualizer.show()
+          # Populate the means and covariances for each timestep within the prediction horizon
+          for _ in np.arange(0, self.H, self.dt):
+              means.append([v, omega])  # The mean of v and omega is the action's value
+              covariance = np.diag([v_variance, omega_variances[mode]])  # Diagonal covariance matrix
+              covariances.append(covariance)
+
+          # Assign the mean and covariance vectors to the corresponding mode
+          agent_prediction[mode] = {
+              'means': means,  # List of means over the prediction horizon
+              'covariances': covariances  # List of covariance matrices over the prediction horizon
+          }
+
+      # The predictions for all modes of the single agent are encapsulated in a list
+      gmm_predictions = [agent_prediction]
+
+      return gmm_predictions
+  
+agent = UncontrolledAgent()
+traj = agent.simulate_diff_drive()
+
+vis = Visualizer(traj, agent.actions)
+vis.show()
