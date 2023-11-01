@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from metrics_logger import MetricsLogger
 
 class MPC_Base:
-    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, map=None, ref=None):
+    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=None, ref=None):
         self.num_agent = mpc_params['num_agents']
         self.dt = mpc_params['dt']
         self.N = mpc_params['N']
@@ -23,6 +23,9 @@ class MPC_Base:
         self.cost_func_params = cost_func_params
         self.scenario = scenario
         self.trial = trial
+        self.uncontrolled_agent = uncontrolled_agent
+        self.uncontrolled_traj = uncontrolled_traj
+        self.delta = 0.03
 
         self.model = DiffDrive(self.rob_dia)
 

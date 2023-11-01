@@ -2,6 +2,7 @@ from mpc import MPC
 import numpy as np
 from utils import *
 import matplotlib.pyplot as plt
+from uncontrolled_agent import UncontrolledAgent
 
 if __name__ == "__main__":
     initial_states = [[0.0, 0.0, 0.0]]
@@ -41,7 +42,10 @@ if __name__ == "__main__":
     scenario = "test_1_robot"
     trial = 1
 
-    mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, map=map)
+    uncontrolled_agent = UncontrolledAgent()
+    uncontrolled_traj = uncontrolled_agent.simulate_diff_drive()
+
+    mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map)
     mpc.simulate()
 
 
