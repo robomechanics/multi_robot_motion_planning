@@ -82,11 +82,12 @@ class MPC(MPC_Base):
             for mode, prediction in agent_prediction.items():
                 means = prediction['means']
                 covariances = prediction['covariances']
-                print(f"Mode: {mode}")
+                # print(f"Mode: {mode}")
                 for timestep, (mean, covariance) in enumerate(zip(means, covariances)):
-                    aij = (opt_states[l,:] - mean[:2]) / np.norm(opt_states[l,:] - mean[:2])
+                    aij = (opt_states[timestep,:2].T - mean[:2]) / ca.norm_2(opt_states[timestep,:2].T - mean[:2])
                     bij = self.rob_dia*2
-                    rob_rob_constraint = aij.T*(opt_states[l,:2] - mean[:2]) - bij - sp.erfinv(1-2*self.delta) * ca.sqrt(2*aij.T(2*covariance)*aij)
+                    mean = np.array(mean[:2]).reshape(1,2)
+                    rob_rob_constraint = aij.T@(opt_states[timestep,:2] - mean).T - bij - sp.erfinv(1-2*self.delta) * ca.sqrt(2*aij.T@(covariance[:2,:2])@aij)
                     opti.subject_to(rob_rob_constraint >= 0)
 
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
