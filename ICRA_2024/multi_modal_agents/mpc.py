@@ -5,6 +5,7 @@ import time
 from mpc_base import MPC_Base
 import multiprocessing as mp
 from utils import *
+import scipy.special as sp
 
 class MPC(MPC_Base):    
     def run_single_mpc(self, agent_id, current_state, inter_rob_constraints):
@@ -72,6 +73,21 @@ class MPC(MPC_Base):
             for l in range(self.N):
                 rob_obs_constraints_ = ca.sqrt((opt_states[l, 0]-obs_x)**2+(opt_states[l, 1]-obs_y)**2)-obs_dia/2 - self.rob_dia/2 - self.safety_margin + opt_epsilon_o[l]
                 opti.subject_to(rob_obs_constraints_ >= 0)
+
+        ##### Get chance constraints from the given GMM prediction
+        ## aij = (pi - pj) / ||pi - pj|| and bij = ri + rj 
+        ## aij^T(pi - pj) - bij >= erf^-1(1 - 2delta)sqrt(2*aij^T(sigma_i + sigma_j)aij)
+        gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_state)
+        for agent_prediction in gmm_predictions:
+            for mode, prediction in agent_prediction.items():
+                means = prediction['means']
+                covariances = prediction['covariances']
+                print(f"Mode: {mode}")
+                for timestep, (mean, covariance) in enumerate(zip(means, covariances)):
+                    aij = (opt_states[l,:] - mean[:2]) / np.norm(opt_states[l,:] - mean[:2])
+                    bij = self.rob_dia*2
+                    rob_rob_constraint = aij.T*(opt_states[l,:2] - mean[:2]) - bij - sp.erfinv(1-2*self.delta) * ca.sqrt(2*aij.T(2*covariance)*aij)
+                    opti.subject_to(rob_rob_constraint >= 0)
 
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
                             'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,

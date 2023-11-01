@@ -13,10 +13,9 @@ class Visualizer:
         self.lines = [self.ax.plot([], [])[0] for _ in actions]
         self.circles = [[self.ax.add_patch(plt.Circle((0, 0), 0, color='gray', alpha=0.3)) for _ in traj] for traj in trajectories]
 
-        self.ax.set_xlim([-1, 2])
-        self.ax.set_ylim([-1, 2])
+        self.ax.set_xlim([-1, 3])
+        self.ax.set_ylim([-1, 3])
         self.ax.set_aspect('equal')
-        self.ax.grid(True)
 
     def animate(self, i):
         for j, traj in enumerate(self.trajectories):
