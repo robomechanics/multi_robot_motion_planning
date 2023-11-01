@@ -31,7 +31,7 @@ if __name__ == "__main__":
     }
 
     obs_traj = []
-    static_obs = [[2.0, 0.5, 0.6]]
+    static_obs = []
 
     obs = {"static": static_obs, "dynamic": obs_traj}
 
