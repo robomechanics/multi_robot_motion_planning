@@ -21,6 +21,7 @@ class MPC(MPC_Base):
         omega = opt_controls[:, 1]
         
         opt_epsilon_o = opti.variable(self.N+1, 1)
+        opt_epsilon_r = opti.variable(self.N+1, 1)
 
         # parameters
         opt_x0 = opti.parameter(3)
@@ -33,6 +34,7 @@ class MPC(MPC_Base):
             x_next = opt_states[j, :] + self.f(opt_states[j, :], opt_controls[j, :]).T*self.dt
             opti.subject_to(opt_states[j+1, :] == x_next)
             opti.subject_to(opti.bounded(0, opt_epsilon_o[j], ca.inf))
+            opti.subject_to(opti.bounded(0, opt_epsilon_r[j], ca.inf))
 
         # define the cost function
         robot_cost = 0  # cost
@@ -53,7 +55,7 @@ class MPC(MPC_Base):
             #                             ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + ca.mtimes([(opt_states[k, :2]-curr_ref), P, (opt_states[k, :2]-curr_ref).T]) + 100000 * opt_epsilon_o[k]
             # else: 
             robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
-                                        ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 100000 * opt_epsilon_o[k]
+                                        ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 100000 * opt_epsilon_o[k] + 100000 * opt_epsilon_r[k]
 
         total_cost = robot_cost + collision_cost
         opti.minimize(total_cost)
@@ -77,17 +79,33 @@ class MPC(MPC_Base):
         ##### Get chance constraints from the given GMM prediction
         ## aij = (pi - pj) / ||pi - pj|| and bij = ri + rj 
         ## aij^T(pi - pj) - bij >= erf^-1(1 - 2delta)sqrt(2*aij^T(sigma_i + sigma_j)aij)
+        current_state = self.uncontrolled_traj[self.num_timestep]
         gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_state)
+
         for agent_prediction in gmm_predictions:
             for mode, prediction in agent_prediction.items():
                 means = prediction['means']
                 covariances = prediction['covariances']
+                # print(mode)
+                # print(means)
+                # print("####")
+                x_values = [item[0] for item in means]
+                y_values = [item[1] for item in means]
+
+                # Create a scatter plot
+                # plt.scatter(x_values, y_values)
+                # plt.xlim([0, 5])
+                # plt.ylim([-5, 5])
+                # plt.show()
+                
                 # print(f"Mode: {mode}")
                 for timestep, (mean, covariance) in enumerate(zip(means, covariances)):
-                    aij = (opt_states[timestep,:2].T - mean[:2]) / ca.norm_2(opt_states[timestep,:2].T - mean[:2])
-                    bij = self.rob_dia*2
-                    mean = np.array(mean[:2]).reshape(1,2)
-                    rob_rob_constraint = aij.T@(opt_states[timestep,:2] - mean).T - bij - sp.erfinv(1-2*self.delta) * ca.sqrt(2*aij.T@(covariance[:2,:2])@aij)
+                    pi = opt_states[timestep,:2].T
+                    pj = mean[:2]
+                    rob_rob_constraint = ca.sqrt((opt_states[timestep,0]-pj[0])**2 + (opt_states[timestep,1]-pj[1])**2) - self.rob_dia + opt_epsilon_r[timestep]
+                    # aij = (pi-pj) / ca.norm_2(pi-pj)
+                    # bij = self.rob_dia*2
+                    # rob_rob_constraint = aij.T@(pi-pj) - bij - sp.erfinv(1-2*self.delta) * ca.sqrt(2*aij.T@(covariance[:2,:2])@aij)
                     opti.subject_to(rob_rob_constraint >= 0)
 
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,

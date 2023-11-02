@@ -4,7 +4,7 @@ from matplotlib.animation import FuncAnimation
 from visualizer import Visualizer
 
 class UncontrolledAgent:
-    def __init__(self, dt=0.05, T=10, H=1.0, action_duration=3.0):
+    def __init__(self, dt=0.05, T=10, H=40, action_duration=3.0):
         self.dt = dt
         self.T = T 
         self.H = H
@@ -12,7 +12,7 @@ class UncontrolledAgent:
         self.init_state_variance = [0.05, 0.05, 0.05]
         self.v_variance = 0.1
         self.omega_variance = [0.1, 0.01, 0.1]  # Variances for omega corresponding to each action
-        self.action_prob = [0.15, 0.65, 0.2]
+        self.action_prob = [0.05, 0.9, 0.05]
         self.actions = [
         (np.random.normal(0.5, self.v_variance), np.random.normal(0.7, self.omega_variance[0])), 
         (np.random.normal(0.5, self.v_variance), np.random.normal(0.0, self.omega_variance[1])), 
@@ -30,9 +30,11 @@ class UncontrolledAgent:
         return x, y, theta, noise_x, noise_y
 
     def simulate_diff_drive(self, x0=0, y0=0, theta0=0):
-        trajectories = [[] for _ in self.actions]
+        predictions = [[] for _ in self.actions]
+        executed_traj = []
 
         x, y, theta = x0, y0, theta0
+        executed_traj.append((x,y,theta))
         current_action_duration = 0
         selected_action = self.actions[np.random.choice(len(self.actions), p=self.action_prob)]
 
@@ -46,18 +48,19 @@ class UncontrolledAgent:
                 temp_x, temp_y, temp_theta = x, y, theta
                 traj = []
                 accumulated_noise_x, accumulated_noise_y = 0, 0
-                for _ in np.arange(0, self.H, self.dt):
+                for _ in np.arange(self.H):
                     temp_x, temp_y, temp_theta, noise_x, noise_y = self.propagate_state(temp_x, temp_y, temp_theta, v, omega)
                     accumulated_noise_x += noise_x
                     accumulated_noise_y += noise_y
                     traj.append((temp_x, temp_y, accumulated_noise_x, accumulated_noise_y))
-                trajectories[i].append(traj)
+                predictions[i].append(traj)
 
             # Update robot's actual state using the selected action
             x, y, theta, noise_x, noise_y = self.propagate_state(x, y, theta, selected_action[0], selected_action[1])
+            executed_traj.append((x,y,theta))
             current_action_duration += self.dt
 
-        return trajectories
+        return predictions, executed_traj
 
     def get_gmm_predictions(self):
         # Single dictionary for the single agent
@@ -106,7 +109,7 @@ class UncontrolledAgent:
             Q = np.diag([self.v_variance**2, self.v_variance**2, self.omega_variance[mode]**2])
 
             # Populate the means and covariances for each timestep within the prediction horizon
-            for step in np.arange(0, self.H, self.dt):
+            for step in np.arange(0, self.H):
                 # Propagate the state without additional noise
                 x, y, theta, noise_x, noise_y = self.propagate_state(x, y, theta, v, omega)
                 means.append([x, y, theta])  # Mean of the state after propagation
@@ -129,7 +132,7 @@ class UncontrolledAgent:
         return gmm_predictions
 
 # agent = UncontrolledAgent()
-# traj = agent.simulate_diff_drive()
+# traj, prediction = agent.simulate_diff_drive()
 
 # predicitons = agent.get_gmm_predictions()
 
