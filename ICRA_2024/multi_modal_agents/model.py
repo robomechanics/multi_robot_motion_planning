@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from scipy.stats import chi2
 from matplotlib import patches
+import casadi as ca
 
 class DiffDrive:
     """Differential-drive vehicle class.
@@ -43,6 +44,38 @@ class DiffDrive:
         f[1] = 0.5 * (u[0] + u[1]) * np.sin(x[2])
         f[2] = 1.0 / self.ell * (u[1] - u[0])
         return f
+    
+    def make_dynamics_jac(self, dt):
+        """
+        Creates casadi functions for computing jacobian matrices
+        A, B, C such that 
+        f(x,u)=C+A(x0,u0)*[x-x0]+ B(x0,u0)*[u-u0]
+
+        Parameters
+        ----------
+        dt : discretization time-step.
+       
+        """
+        sym_x  = ca.MX.sym("x", self.n_x)
+        sym_u  = ca.MX.sym("u", self.n_u)
+
+        sym_vars = [sym_x, sym_u]
+
+        sym_dx = ca.vertcat(0.5 * (sym_u[0] + sym_u[1]) * ca.cos(sym_x[2]),
+                               0.5 * (sym_u[0] + sym_u[1]) * ca.sin(sym_x[2]),
+                               1.0 / self.ell * (sym_u[1] - sym_u[0]))
+        
+        sym_xp1 = sym_x + dt*sym_dx
+
+        self.fd = ca.Function('fd', sym_vars, [sym_xp1])
+
+        self.sym_Ad =  ca.jacobian(sym_xp1, sym_x)
+        self.sym_Bd =  ca.jacobian(sym_xp1, sym_u)
+        self.sym_Cd =  sym_xp1
+
+        self.fAd = ca.Function('fAd', sym_vars, [self.sym_Ad])
+        self.fBd = ca.Function('fBd', sym_vars, [self.sym_Bd])
+        self.fCd = ca.Function('fCd', sym_vars, [self.sym_Cd])
 
     def uni2diff(self, u_in):
         """
