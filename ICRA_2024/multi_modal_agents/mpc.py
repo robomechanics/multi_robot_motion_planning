@@ -26,7 +26,6 @@ class MPC(MPC_Base):
         # parameters
         opt_x0 = opti.parameter(3)
         opt_xs = opti.parameter(3)
-        # self.opt_epsilon_r.append(self.opti.variable(self.N+1, 1))
 
         # init_condition
         opti.subject_to(opt_states[0, :] == opt_x0.T)
@@ -56,6 +55,8 @@ class MPC(MPC_Base):
             # else: 
             robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
                                         ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 100000 * opt_epsilon_o[k] + 100000 * opt_epsilon_r[k]
+            
+        # robot_cost = robot_cost + ca.mtimes([(opt_states[self.N, :]-opt_xs.T), P, (opt_states[self.N, :]-opt_xs.T).T])
 
         total_cost = robot_cost + collision_cost
         opti.minimize(total_cost)
@@ -86,32 +87,21 @@ class MPC(MPC_Base):
             for mode, prediction in agent_prediction.items():
                 means = prediction['means']
                 covariances = prediction['covariances']
-                # print(mode)
-                # print(means)
-                # print("####")
-                x_values = [item[0] for item in means]
-                y_values = [item[1] for item in means]
-
-                # Create a scatter plot
-                # plt.scatter(x_values, y_values)
-                # plt.xlim([0, 5])
-                # plt.ylim([-5, 5])
-                # plt.show()
                 
-                # print(f"Mode: {mode}")
                 for timestep, (mean, covariance) in enumerate(zip(means, covariances)):
                     pi = opt_states[timestep,:2].T
                     pj = mean[:2]
-                    rob_rob_constraint = ca.sqrt((opt_states[timestep,0]-pj[0])**2 + (opt_states[timestep,1]-pj[1])**2) - self.rob_dia + opt_epsilon_r[timestep]
+                    rob_rob_constraint = ca.sqrt((opt_states[timestep,0]-pj[0])**2 + (opt_states[timestep,1]-pj[1])**2) - 2* self.rob_dia + opt_epsilon_r[timestep]
                     # aij = (pi-pj) / ca.norm_2(pi-pj)
                     # bij = self.rob_dia*2
                     # rob_rob_constraint = aij.T@(pi-pj) - bij - sp.erfinv(1-2*self.delta) * ca.sqrt(2*aij.T@(covariance[:2,:2])@aij)
-                    opti.subject_to(rob_rob_constraint >= 0)
+                    # opti.subject_to(rob_rob_constraint >= 0)
 
+        # opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
+        #                     'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
+        #                     'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
-                            'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
-                            'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
-
+                            'ipopt.acceptable_tol': 1e-8}
         opti.solver('ipopt', opts_setting)
         opti.set_value(opt_xs, self.final_state[agent_id])
             
@@ -145,12 +135,13 @@ class MPC(MPC_Base):
         self.state_cache = {agent_id: [] for agent_id in range(self.num_agent)}
         self.prediction_cache = {agent_id: np.empty((3, self.N+1)) for agent_id in range(self.num_agent)}
         self.control_cache = {agent_id: np.empty((2, self.N)) for agent_id in range(self.num_agent)}
+        self.setup_visualization()
 
         # parallelized implementation
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
             print(self.num_timestep)
-    
+
             # Create a multiprocessing pool
             pool = mp.Pool()
     
@@ -159,7 +150,12 @@ class MPC(MPC_Base):
     
             pool.close()
             pool.join()
-    
+
+            current_state = self.uncontrolled_traj[self.num_timestep]
+            gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_state)
+
+            self.plot_gmm_means_and_state(self.current_state[0], gmm_predictions[0])
+            
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
                 u, next_states_pred = result
