@@ -4,15 +4,16 @@ from matplotlib.animation import FuncAnimation
 from visualizer import Visualizer
 
 class UncontrolledAgent:
-    def __init__(self, dt=0.05, T=10, H=40, action_duration=3.0):
+    def __init__(self, dt=0.05, T=10, H=40, action_duration=2.0):
         self.dt = dt
         self.T = T 
         self.H = H
+        self.average_action_rate = action_duration
         self.action_duration = action_duration
         self.init_state_variance = [0.05, 0.05, 0.05]
         self.v_variance = 0.1
         self.omega_variance = [0.1, 0.01, 0.1]  # Variances for omega corresponding to each action
-        self.action_prob = [0.05, 0.9, 0.05]
+        self.action_prob = [0.1, 0.8, 0.1]
         self.actions = [
         (np.random.normal(0.5, self.v_variance), np.random.normal(0.7, self.omega_variance[0])), 
         (np.random.normal(0.5, self.v_variance), np.random.normal(0.0, self.omega_variance[1])), 
@@ -38,8 +39,13 @@ class UncontrolledAgent:
         current_action_duration = 0
         selected_action = self.actions[np.random.choice(len(self.actions), p=self.action_prob)]
 
+        lambda_rate = self.average_action_rate  
+        average_action_duration = 1 / lambda_rate
+
         for t in np.arange(0, self.T, self.dt):
             if current_action_duration >= self.action_duration:
+                self.action_duration = np.random.exponential(scale=average_action_duration)
+                print(self.action_duration)
                 # Sample a new action based on belief
                 selected_action = self.actions[np.random.choice(len(self.actions), p=self.action_prob)]
                 current_action_duration = 0

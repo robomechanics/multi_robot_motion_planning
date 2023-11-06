@@ -4,6 +4,8 @@ from model import DiffDrive
 import math
 import matplotlib.pyplot as plt
 from metrics_logger import MetricsLogger
+from matplotlib.patches import Circle, Arrow
+from matplotlib.animation import FuncAnimation
 
 class MPC_Base:
     def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=None, ref=None):
@@ -194,6 +196,48 @@ class MPC_Base:
                 segment_dict[robot_id] = segment_waypoints
 
         return segment_dict
+
+    def setup_visualization(self):
+        # Initialize the figure and axis once
+        self.fig, self.ax = plt.subplots()
+        self.ax.set_title('GMM Means and Agent State Visualization')
+        self.ax.set_xlabel('X coordinate')
+        self.ax.set_ylabel('Y coordinate')
+        self.ax.set_xlim(-10, 10)  # Adjust these limits according to your scenario
+        self.ax.set_ylim(-10, 10)
+        # plt.ion()  # Turn on interactive mode
+
+    def plot_gmm_means_and_state(self, current_state, gmm_data=None):
+        self.ax.clear()  # Clear the current axes
+
+        # Set the title and labels (since ax.clear() will remove them too)
+        self.ax.set_title('GMM Means and Agent State Visualization')
+        self.ax.set_xlabel('X coordinate')
+        self.ax.set_ylabel('Y coordinate')
+        self.ax.set_xlim(-6, 6)  # Adjust these limits according to your scenario
+        self.ax.set_ylim(-6, 6)
+
+        # Plotting the GMM predictions as scattered points
+        colors = plt.cm.get_cmap('hsv', 3)
+        for mode, data in enumerate(gmm_data.values(), start=1):
+            means = np.array(data['means'])
+            self.ax.scatter(means[:, 0], means[:, 1], color=colors(mode / 3), label=f'Mode {mode}')
+
+        # Plotting current state as a circle with an arrow for orientation
+        circle = plt.Circle((current_state[0], current_state[1]), 0.3, fill=True, color='blue', zorder=5)
+        self.ax.add_patch(circle)
+
+        # Assuming theta is in radians and the arrow shows the orientation
+        arrow_length = 0.3  # This should be scaled appropriately
+        arrow = plt.Arrow(current_state[0], current_state[1],
+                        arrow_length * np.cos(current_state[2]), arrow_length * np.sin(current_state[2]),
+                        width=0.1, color='yellow', zorder=5)
+        self.ax.add_patch(arrow)
+
+        self.ax.legend()
+
+        plt.draw()
+        plt.pause(0.1)
 
     def simulate(self):
         raise NotImplementedError("Subclasses must implement the functionality")

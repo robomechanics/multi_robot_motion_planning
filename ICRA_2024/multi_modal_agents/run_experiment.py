@@ -5,19 +5,19 @@ import matplotlib.pyplot as plt
 from uncontrolled_agent import UncontrolledAgent
 
 if __name__ == "__main__":
-    initial_states = [[5.0, 0.0, 0.0]]
-    final_states = [[0.0, 2.0, 0.0]]
+    initial_states = [[0.0, 0.0, 0.0]]
+    final_states = [[4.0, 0.0, 0.0]]
 
     cost_func_params = {
-        'Q':  np.array([[7.0, 0.0, 0.0], [0.0, 7.0, 0.0], [0.0, 0.0, 2.5]]),
-        'R': np.array([[7.5, 0.0], [0.0, 3.5]]),
-        'P': np.array([[12.5, 0.0], [0.0, 12.5]]),
+        'Q':  np.array([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, .1]]),
+        'R': np.array([[12.5, 0.0], [0.0, 0.05]]),
+        'P': np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 5.0]]),
         'Qc': 8,
         'kappa': 3 
     }
     mpc_params = {
         'num_agents': 1,
-        'dt': 0.05,
+        'dt': 0.1,
         'N' : 40,
         'rob_dia': 0.3,
         'v_lim': 1.0,
