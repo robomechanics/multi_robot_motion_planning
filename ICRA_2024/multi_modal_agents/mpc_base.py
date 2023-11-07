@@ -205,33 +205,31 @@ class MPC_Base:
         self.ax.set_ylabel('Y coordinate')
         self.ax.set_xlim(-10, 10)  # Adjust these limits according to your scenario
         self.ax.set_ylim(-10, 10)
-        # plt.ion()  # Turn on interactive mode
+        plt.ion()  # Turn on interactive mode
 
-    def plot_gmm_means_and_state(self, current_state, gmm_data=None):
+    def plot_gmm_means_and_state(self, current_state, current_prediction, gmm_data=None):
         self.ax.clear()  # Clear the current axes
 
         # Set the title and labels (since ax.clear() will remove them too)
-        self.ax.set_title('GMM Means and Agent State Visualization')
-        self.ax.set_xlabel('X coordinate')
-        self.ax.set_ylabel('Y coordinate')
-        self.ax.set_xlim(-6, 6)  # Adjust these limits according to your scenario
-        self.ax.set_ylim(-6, 6)
+        self.ax.set_xlim(-4, 4)  # Adjust these limits according to your scenario
+        self.ax.set_ylim(-4, 4)
 
         # Plotting the GMM predictions as scattered points
         colors = plt.cm.get_cmap('hsv', 3)
         for mode, data in enumerate(gmm_data.values(), start=1):
             means = np.array(data['means'])
-            self.ax.scatter(means[:, 0], means[:, 1], color=colors(mode / 3), label=f'Mode {mode}')
+            self.ax.scatter(means[:, 0], means[:, 1])
 
+        self.ax.plot(current_prediction[0,:], current_prediction[1,:])
         # Plotting current state as a circle with an arrow for orientation
-        circle = plt.Circle((current_state[0], current_state[1]), 0.3, fill=True, color='blue', zorder=5)
+        circle = plt.Circle((current_state[0], current_state[1]), 0.15, fill=True, color='blue')
         self.ax.add_patch(circle)
 
         # Assuming theta is in radians and the arrow shows the orientation
         arrow_length = 0.3  # This should be scaled appropriately
         arrow = plt.Arrow(current_state[0], current_state[1],
                         arrow_length * np.cos(current_state[2]), arrow_length * np.sin(current_state[2]),
-                        width=0.1, color='yellow', zorder=5)
+                        width=0.1, color='yellow')
         self.ax.add_patch(arrow)
 
         self.ax.legend()

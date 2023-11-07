@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 from uncontrolled_agent import UncontrolledAgent
 
 if __name__ == "__main__":
-    initial_states = [[0.0, 0.0, 0.0]]
-    final_states = [[4.0, 0.0, 0.0]]
+    initial_states = [[3.0, 0.0, 0.0]]
+    final_states = [[0.0, 0.0, 0.0]]
 
     cost_func_params = {
         'Q':  np.array([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, .1]]),
@@ -17,7 +17,7 @@ if __name__ == "__main__":
     }
     mpc_params = {
         'num_agents': 1,
-        'dt': 0.1,
+        'dt': 0.08,
         'N' : 40,
         'rob_dia': 0.3,
         'v_lim': 1.0,
