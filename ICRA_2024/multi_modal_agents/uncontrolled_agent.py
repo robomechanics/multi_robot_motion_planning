@@ -4,7 +4,7 @@ from matplotlib.animation import FuncAnimation
 from visualizer import Visualizer
 
 class UncontrolledAgent:
-    def __init__(self, dt=0.05, T=10, H=40, action_duration=2.0):
+    def __init__(self, dt=0.05, T=10, H=40, action_duration=1.0):
         self.dt = dt
         self.T = T 
         self.H = H
@@ -45,7 +45,6 @@ class UncontrolledAgent:
         for t in np.arange(0, self.T, self.dt):
             if current_action_duration >= self.action_duration:
                 self.action_duration = np.random.exponential(scale=average_action_duration)
-                print(self.action_duration)
                 # Sample a new action based on belief
                 selected_action = self.actions[np.random.choice(len(self.actions), p=self.action_prob)]
                 current_action_duration = 0
