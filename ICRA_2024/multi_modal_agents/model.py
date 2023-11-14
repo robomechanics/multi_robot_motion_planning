@@ -23,6 +23,8 @@ class DiffDrive:
     def __init__(self, ell):
         """Constructor method."""
         self.ell = ell
+        self.n_x=3
+        self.n_u=2
 
     def f(self, x, u):
         """Differential drive kinematic vehicle kinematic model.
@@ -56,6 +58,8 @@ class DiffDrive:
         dt : discretization time-step.
        
         """
+
+        
         sym_x  = ca.MX.sym("x", self.n_x)
         sym_u  = ca.MX.sym("u", self.n_u)
 
