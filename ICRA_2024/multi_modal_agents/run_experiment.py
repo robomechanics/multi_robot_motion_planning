@@ -1,4 +1,5 @@
-from mpc import MPC
+# from mpc import MPC
+from mm_mpc import MM_MPC
 import numpy as np
 from utils import *
 import matplotlib.pyplot as plt
@@ -17,12 +18,12 @@ if __name__ == "__main__":
     }
     mpc_params = {
         'num_agents': 1,
-        'dt': 0.05,
-        'N' : 40,
+        'dt': 0.1,
+        'N' : 10,
         'rob_dia': 0.3,
         'v_lim': 1.0,
         'omega_lim': 1.0,
-        'total_sim_timestep': 200,
+        'total_sim_timestep': 100,
         'obs_sim_timestep': 100,
         'epsilon_o': 0.05,
         'epsilon_r': 0.05,
@@ -37,15 +38,15 @@ if __name__ == "__main__":
 
     map_size = (15,15)
     obstacle_density = 0.0
-    map = generate_map(map_size, 0)
+    # map = generate_map(map_size, 0)
 
     scenario = "test_1_robot"
     trial = 1
 
-    uncontrolled_agent = UncontrolledAgent()
+    uncontrolled_agent = UncontrolledAgent(dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'])
     predictions, uncontrolled_traj = uncontrolled_agent.simulate_diff_drive()
 
-    mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map)
+    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map)
     mpc.simulate()
 
 
