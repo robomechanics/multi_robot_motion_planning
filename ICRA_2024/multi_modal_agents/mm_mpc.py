@@ -37,19 +37,21 @@ class MM_MPC(MPC_Base):
 
         E=0.1*ca.DM.eye(n_x)  # Coefficients of Linearization error
 
-        if not x_lin:
+        if x_lin is None:
             x_lin=ca.DM(self.N+1,3)
-            u_lin=ca.horzcat(1.0*ca.DM.ones(self.N,1), ca.DM(self.N,1))
+            u_lin=ca.horzcat(.2*ca.DM.ones(self.N,1), ca.DM(self.N,1))
             x_lin[0,:]=current_state.reshape((1,-1))
             for t in range(self.N):
                 x_lin[t+1,:]=self.model.fCd(x_lin[t,:], u_lin[t,:])
+
+   
 
 
         for t in range(self.N):
   
             A[t]=self.model.fAd(x_lin[t,:], u_lin[t,:])
             B[t]=self.model.fBd(x_lin[t,:], u_lin[t,:])
-            C[t]=self.model.fCd(x_lin[t,:], u_lin[t,:])
+            C[t]=x_lin[t+1,:].T-A[t]@x_lin[t,:].T-B[t]@u_lin[t,:].T
 
             A_block[(t+1)*n_x:(t+2)*n_x, :]=A[t]@A_block[t*n_x:(t+1)*n_x, :]
 
@@ -105,7 +107,7 @@ class MM_MPC(MPC_Base):
                 v=mean_inputs[min(t,self.N-1)][0]
                 c_obs[t*2:(t+1)*2,:]=c_obs[(t-1)*2:t*2,:]+B@v
 
-                E=B@covar_inputs[t][0,0]**(0.5)
+                E=B@covar_inputs[t-1][0,0]**(0.5)
                 E_obs[t*2:(t+1)*2,:]=E_obs[(t-1)*2:t*2,:]    
                 E_obs[t*2:(t+1)*2,(t-1)*1:t*1]=E
 
@@ -138,7 +140,8 @@ class MM_MPC(MPC_Base):
             A_rob, B_rob, C_rob, E_rob = self._get_robot_ATV_dynamics(current_state)
 
         # nominal state predictions
-        opt_states = (A_rob@ca.vec(ca.DM(current_state))+B_rob@ca.vec(opt_controls.T)+C_rob).reshape((-1,self.N+1)).T
+        opt_states = ca.vec(A_rob@ca.DM(current_state)+B_rob@ca.vec(opt_controls.T)+C_rob).reshape((-1,self.N+1)).T
+
 
         opt_x = opt_states[:,0]
         opt_y = opt_states[:,1]
@@ -147,7 +150,8 @@ class MM_MPC(MPC_Base):
 
         
         # opt_epsilon_o = opti.variable(self.N+1, 1)
-        # opt_epsilon_r = opti.variable(self.N+1, 1)
+        opt_epsilon_r = opti.variable(self.N, 1)
+        opti.subject_to(opti.bounded(0, opt_epsilon_r, ca.inf))
 
         # parameters
         opt_x0 = opti.parameter(3)
@@ -173,8 +177,8 @@ class MM_MPC(MPC_Base):
 
 
         for k in range(self.N):
-            robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
-                                        ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) #+ 100000 * opt_epsilon_o[k] + 100000 * opt_epsilon_r[k]
+            robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T] 
+                        )+ ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + 100000 * opt_epsilon_r[k] #+ 100000 * opt_epsilon_o[k] 
             # for i in range(n_obs):
             #     for j in range(n_modes):
             #         ca.mtimes(K_stack[i][j][k]@covar_o[k]@R@K_stack[i][j][k].T@covar_o[k].T)
@@ -228,11 +232,11 @@ class MM_MPC(MPC_Base):
                 K_stack=ca.diagcat(ca.DM(2,2),*[K[t] for t in range(self.N-1)]) 
 
                 obs_xy_cov = ca.diagcat(*[ cov[:2,:2] for cov in covariances])
-
+     
                 total_cost+= ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
 
                 pol_gains_k.append(K_stack)
-
+        
                 T_o, c_o, E_o= self._get_obs_ATV_dynamics(mean_inputs, covar_inputs, mean_traj)
 
                 T_obs_k.append(T_o)
@@ -268,16 +272,19 @@ class MM_MPC(MPC_Base):
                     # opt_state[k, :]+noise_correction[k] = A_rob[k, :]@curr_state + B_rob[k,:]@opt_controls+  + C_rob +     B_rob[k,:]@K_stack[k][j]@(O_stack[j]- E[O_stack[j]]) + E_rob@W_t
                     # noise_correction[k]   =  B_rob[k,:]@K_stack[k][j]@E_obs[k][j]@N_t + E_rob@W_t
                 
-                    rv_dist  = sp.erfinv(1-self.delta)*(rob_proj-tv_pos).T@(ca.horzcat(E_rob[t*3:(t+1)*3-1,:],*[B_rob[t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][2:,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(n_obs)]))
+                    # rv_dist  = sp.erfinv(1-self.delta)*(rob_proj-tv_pos).T@(ca.horzcat(E_rob[t*3:(t+1)*3-1,:],*[B_rob[t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][2:,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(n_obs)]))
+                    rv_dist  = (rob_proj-tv_pos).T@(ca.horzcat(E_rob[t*3:(t+1)*3-1,:],*[B_rob[t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][2:,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(n_obs)]))
+                    
                     nom_dist = (rob_proj-tv_pos).T@(opt_states[k, :2].T-rob_proj)
 
                     opti.subject_to(rv_dist@rv_dist.T<=nom_dist)
-                    opti.subject_to(nom_dist>=0)
+                    opti.subject_to(nom_dist>=opt_epsilon_r[t-1])
 
 
-        opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
-                            'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
-                            'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
+        # opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
+        #                     'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
+        #                     'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
+        opts_setting = {'ipopt.print_level': 0, 'print_time': 0,}
         opti.minimize(total_cost)
         opti.solver('ipopt', opts_setting)
         opti.set_value(opt_xs, self.final_state[agent_id])
@@ -301,7 +308,7 @@ class MM_MPC(MPC_Base):
         u_res = sol.value(opt_controls)
         next_states_pred = sol.value(opt_states)
         # eps_o = sol.value(opt_epsilon_o)
-
+   
         self.prev_states[agent_id] = next_states_pred
         self.prev_controls[agent_id] = u_res
         # self.prev_epsilon_o[agent_id] = eps_o 
@@ -322,7 +329,7 @@ class MM_MPC(MPC_Base):
             pool = mp.Pool()
     
             # Apply MPC solve to each agent in parallel
-            result = self.run_single_mpc(0, np.array(self.current_state[0]), [])
+            results = [self.run_single_mpc(0, np.array(self.current_state[0]), [])]
             # results = pool.starmap(self.run_single_mpc, [(agent_id, np.array(self.current_state[agent_id]), []) for agent_id in range(self.num_agent)])
     
             pool.close()
@@ -339,9 +346,14 @@ class MM_MPC(MPC_Base):
                 self.current_state[agent_id] = next_state
                 self.state_cache[agent_id].append(next_state)
 
+                print("Agent state: ", next_state)
+
             self.num_timestep += 1
             time_2 = time.time()
             self.avg_comp_time.append(time_2-time_1)
+
+        
+
 
         if self.is_solution_valid(self.state_cache):
             print("Executed solution is GOOD!")
