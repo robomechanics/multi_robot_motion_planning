@@ -65,9 +65,9 @@ class DiffDrive:
 
         sym_vars = [sym_x, sym_u]
 
-        sym_dx = ca.vertcat(0.5 * (sym_u[0] + sym_u[1]) * ca.cos(sym_x[2]),
-                               0.5 * (sym_u[0] + sym_u[1]) * ca.sin(sym_x[2]),
-                               1.0 / self.ell * (sym_u[1] - sym_u[0]))
+        sym_dx = ca.vertcat(sym_u[0] * ca.cos(sym_x[2]),
+                            sym_u[0] * ca.sin(sym_x[2]),
+                            sym_u[1])
         
         sym_xp1 = sym_x + dt*sym_dx
 

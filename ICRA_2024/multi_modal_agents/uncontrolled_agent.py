@@ -48,7 +48,7 @@ class UncontrolledAgent:
                 temp_x, temp_y, temp_theta = x, y, theta
                 traj = []
                 accumulated_noise_x, accumulated_noise_y = 0, 0
-                for _ in np.arange(self.H):
+                for _ in np.arange(0, self.H, self.dt):
                     temp_x, temp_y, temp_theta, noise_x, noise_y = self.propagate_state(temp_x, temp_y, temp_theta, v, omega)
                     accumulated_noise_x += noise_x
                     accumulated_noise_y += noise_y
@@ -78,6 +78,7 @@ class UncontrolledAgent:
                 covariance = np.diag([self.v_variance**2, self.omega_variance[mode]**2])  # Diagonal covariance matrix
                 covariances.append(covariance)
 
+    
             # Assign the mean and covariance vectors to the corresponding mode
             agent_prediction[mode] = {
                 'means': means,  # List of means over the prediction horizon
@@ -109,7 +110,7 @@ class UncontrolledAgent:
             Q = np.diag([self.v_variance**2, self.v_variance**2, self.omega_variance[mode]**2])
 
             # Populate the means and covariances for each timestep within the prediction horizon
-            for step in np.arange(0, self.H):
+            for step in np.arange(0, self.H, self.dt):
                 # Propagate the state without additional noise
                 x, y, theta, noise_x, noise_y = self.propagate_state(x, y, theta, v, omega)
                 means.append([x, y, theta])  # Mean of the state after propagation
@@ -119,7 +120,7 @@ class UncontrolledAgent:
 
                 # Store the predicted covariance matrix
                 covariances.append(covariance)
-
+      
             # Assign the mean and covariance vectors to the corresponding mode
             agent_prediction[mode] = {
                 'means': means,  # List of means over the prediction horizon
