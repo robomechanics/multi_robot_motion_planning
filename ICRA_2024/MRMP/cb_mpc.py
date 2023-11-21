@@ -282,5 +282,5 @@ class CB_MPC(MPC_Base):
         self.logger.save_metrics_data()
         
         # Draw function
-        draw_result = Draw_MPC_point_stabilization_v1(
-            rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs, map=self.map)
+        # draw_result = Draw_MPC_point_stabilization_v1(
+        #     rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs, map=self.map)

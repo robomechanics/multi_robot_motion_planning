@@ -4,21 +4,24 @@ from matplotlib.animation import FuncAnimation
 from visualizer import Visualizer
 
 class UncontrolledAgent:
-    def __init__(self, dt=0.05, T=10, H=40, action_duration=1.0):
+    def __init__(self, dt=0.1, T=10, H=30, min_action_duration=1, num_switches=3):
         self.dt = dt
         self.T = T 
         self.H = H
-        self.average_action_rate = action_duration
-        self.action_duration = action_duration
+        self.min_action_duration = min_action_duration
         self.init_state_variance = [0.05, 0.05, 0.05]
         self.v_variance = 0.1
+        self.num_switches = num_switches
         self.omega_variance = [0.1, 0.01, 0.1]  # Variances for omega corresponding to each action
         self.action_prob = [0.1, 0.8, 0.1]
         self.actions = [
-        (np.random.normal(0.5, self.v_variance), np.random.normal(0.7, self.omega_variance[0])), 
+        (np.random.normal(0.5, self.v_variance), np.random.normal(0.4, self.omega_variance[0])), 
         (np.random.normal(0.5, self.v_variance), np.random.normal(0.0, self.omega_variance[1])), 
-        (np.random.normal(0.5, self.v_variance), np.random.normal(-0.7, self.omega_variance[2]))]
-        self.noise_range = [-0.01, 0.01]
+        (np.random.normal(0.5, self.v_variance), np.random.normal(-0.4, self.omega_variance[2]))]
+        self.noise_range = [-0.02, 0.02]
+        self.prior_likelihood = [0.3, 0.4, 0.3]
+        self.alpha = 0.2
+        self.min_probability = 0.1
 
     def propagate_state(self, x, y, theta, v, omega):
         noise_x = np.random.uniform(self.noise_range[0], self.noise_range[1])
@@ -30,24 +33,62 @@ class UncontrolledAgent:
 
         return x, y, theta, noise_x, noise_y
 
+    def generate_switch_times(self):
+        segment_length = self.T / self.num_switches
+        switch_times = []
+        for i in range(self.num_switches):
+            segment_start = i * segment_length
+            segment_end = segment_start + segment_length
+            if self.min_action_duration > 0 and i > 0:
+                segment_start = max(segment_start, switch_times[-1] + self.min_action_duration)
+            switch_time = np.random.uniform(segment_start, segment_end)
+            switch_times.append(switch_time)
+
+        return np.sort(switch_times)
+
+    def calculate_likelihood(self, observed_action):
+        likelihood = np.full(len(self.actions), 0.4)  # Start with 10% likelihood for all modes
+
+        for i, action in enumerate(self.actions):
+            if action == observed_action:
+                likelihood[i] = 0.6  # Set 80% likelihood for the observed action
+                break
+
+        return likelihood
+
     def simulate_diff_drive(self, x0=0, y0=0, theta0=0):
         predictions = [[] for _ in self.actions]
         executed_traj = []
+        mode_probabilities = []
+
+        self.switch_times = self.generate_switch_times()
+        switch_index = 0
 
         x, y, theta = x0, y0, theta0
         executed_traj.append((x,y,theta))
         current_action_duration = 0
         selected_action = self.actions[np.random.choice(len(self.actions), p=self.action_prob)]
-
-        lambda_rate = self.average_action_rate  
-        average_action_duration = 1 / lambda_rate
+        state_prob = self.prior_likelihood
 
         for t in np.arange(0, self.T, self.dt):
-            if current_action_duration >= self.action_duration:
-                self.action_duration = np.random.exponential(scale=average_action_duration)
-                # Sample a new action based on belief
+            if switch_index < len(self.switch_times) and t >= self.switch_times[switch_index]:
                 selected_action = self.actions[np.random.choice(len(self.actions), p=self.action_prob)]
-                current_action_duration = 0
+                switch_index += 1
+                state_prob = self.prior_likelihood
+            
+            likelihood = self.calculate_likelihood(selected_action)
+            new_state_prob = (likelihood * state_prob) / np.sum(likelihood * state_prob)
+
+            # Apply smoothing to each element
+            state_prob = [self.alpha * new_state_prob[i] + (1 - self.alpha) * state_prob[i] for i in range(len(state_prob))]
+
+            state_prob = [max(p, self.min_probability) for p in state_prob]
+
+            # Renormalize the probabilities to ensure they sum to 1
+            total_prob = sum(state_prob)
+            state_prob = [p / total_prob for p in state_prob]
+
+            mode_probabilities.append(state_prob)
 
             for i, (v, omega) in enumerate(self.actions):
                 temp_x, temp_y, temp_theta = x, y, theta
@@ -65,7 +106,7 @@ class UncontrolledAgent:
             executed_traj.append((x,y,theta))
             current_action_duration += self.dt
 
-        return predictions, executed_traj
+        return predictions, executed_traj, mode_probabilities
 
     def get_gmm_predictions(self):
         # Single dictionary for the single agent
@@ -137,9 +178,9 @@ class UncontrolledAgent:
         return gmm_predictions
 
 # agent = UncontrolledAgent()
-# traj, prediction = agent.simulate_diff_drive()
+# traj, prediction, mode_probabilities = agent.simulate_diff_drive()
 
 # predicitons = agent.get_gmm_predictions()
 
-# vis = Visualizer(traj, agent.actions)
+# vis = Visualizer(traj, agent.actions, agent.switch_times, mode_probabilities)
 # vis.show()
