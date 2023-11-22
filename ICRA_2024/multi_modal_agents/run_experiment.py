@@ -19,7 +19,7 @@ if __name__ == "__main__":
     mpc_params = {
         'num_agents': 1,
         'dt': 0.1,
-        'N' : 10,
+        'N' : 20,
         'rob_dia': 0.3,
         'v_lim': 1.0,
         'omega_lim': 1.0,
