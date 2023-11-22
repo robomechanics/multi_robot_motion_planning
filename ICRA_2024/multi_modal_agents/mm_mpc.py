@@ -292,8 +292,8 @@ class MM_MPC(MPC_Base):
                     
                     nom_dist = (rob_proj-tv_pos).T@(opt_states[j][k, :2].T-rob_proj)
 
-                    opti.subject_to(rv_dist@rv_dist.T<=nom_dist)
-                    opti.subject_to(nom_dist>=opt_epsilon_r[t-1])
+                    opti.subject_to(rv_dist@rv_dist.T<=opt_epsilon_r[t-1]+nom_dist)
+                    opti.subject_to(nom_dist>=-opt_epsilon_r[t-1])
 
 
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
