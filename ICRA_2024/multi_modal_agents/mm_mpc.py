@@ -44,9 +44,6 @@ class MM_MPC(MPC_Base):
             for t in range(self.N):
                 x_lin[t+1,:]=self.model.fCd(x_lin[t,:], u_lin[t,:])
 
-   
-
-
         for t in range(self.N):
             
             # if u_lin[t,0] > 0 and u_lin[t,0] < 0.1 :
@@ -65,7 +62,6 @@ class MM_MPC(MPC_Base):
             C_block[(t+1)*n_x:(t+2)*n_x,:]=A[t]@C_block[t*n_x:(t+1)*n_x,:] + C[t]
             E_block[(t+1)*n_x:(t+2)*n_x,:]=A[t]@E_block[t*n_x:(t+1)*n_x,:]
             E_block[(t+1)*n_x:(t+2)*n_x,t*n_x:(t+1)*n_x]=E
-
 
         return A_block, B_block, C_block, E_block
     
@@ -94,7 +90,6 @@ class MM_MPC(MPC_Base):
 
         o_{t+N}= o_{t|t} + dt*[cos\theta_t; sin\theta_t]v_t+ .... + dt*[cos\theta_(t+N-1); sin\theta_(t+N-1)]v_(t+N-1) + n_t +... n_{t+N-1}
         """ 
-
         T_obs=ca.DM(2*(self.N+1), 2)
         
         c_obs=ca.DM(2*(self.N+1), 1) 
@@ -115,12 +110,8 @@ class MM_MPC(MPC_Base):
                 E_obs[t*2:(t+1)*2,:]=E_obs[(t-1)*2:t*2,:]    
                 E_obs[t*2:(t+1)*2,(t-1)*1:t*1]=E
 
-                
-
         return T_obs, c_obs, E_obs
 
-    
-      
     def run_single_mpc(self, agent_id, current_state, inter_rob_constraints, rob_horizon = 4):
         # casadi parameters
         opti = ca.Opti()
@@ -159,15 +150,11 @@ class MM_MPC(MPC_Base):
             # nominal state predictions
             opt_states.append(ca.vec(A@ca.DM(current_state)+B@ca.vec(opt_controls[j].T)+C).reshape((-1,self.N+1)).T)
 
-
             opt_x.append(opt_states[-1][:,0])
             opt_y.append(opt_states[-1][:,1])
             v.append(opt_controls[j][:,0])
             omega.append(opt_controls[j][:,1])
 
-        
-
-        
         # opt_epsilon_o = opti.variable(self.N+1, 1)
         opt_epsilon_r = opti.variable(self.N, 1)
         opti.subject_to(opti.bounded(0, opt_epsilon_r, ca.inf))
@@ -203,23 +190,17 @@ class MM_MPC(MPC_Base):
                     obs_x = obs[0]
                     obs_y = obs[1]
                     obs_dia = obs[2]
-            
                     
                     rob_obs_constraints_ = ca.sqrt((opt_states[k, 0]-obs_x)**2+(opt_states[k, 1]-obs_y)**2)-obs_dia/2 - self.rob_dia/2 - self.safety_margin #+ opt_epsilon_o[l]
                     opti.subject_to(rob_obs_constraints_ >= 0)
-
-       
             
             # boundrary and control conditions
             opti.subject_to(opti.bounded(-10.0, opt_x[j], 10.0))
             opti.subject_to(opti.bounded(-10.0, opt_y[j], 10.0))
             opti.subject_to(opti.bounded(-self.v_lim, v[j], self.v_lim))
             opti.subject_to(opti.bounded(-self.omega_lim, omega[j], self.omega_lim))
-
-        
             # static obstacle constraint
             
-
         total_cost = robot_cost + collision_cost
         
         ##### Get chance constraints from the given GMM prediction
@@ -234,9 +215,8 @@ class MM_MPC(MPC_Base):
         for agent_prediction, agent_noise in zip(gmm_predictions, noise_chars):
             T_obs_k, c_obs_k, E_obs_k=[], [], []
             pol_gains_k=[]
-            for mode, prediction in agent_prediction.items():
-                
 
+            for mode, prediction in agent_prediction.items():
                 mean_traj = prediction['means']
                 covariances = prediction['covariances']
 
@@ -280,9 +260,6 @@ class MM_MPC(MPC_Base):
                     # New chance constraint: Prob ( (tv_pos - curr_state)@(opt_state+noise_correction - curr_state - tv_noise) > =0 ) >= 1-eps
                     #                      :  Prob((tv_pos - curr_state)@(noise_correction -tv_noise) >= -(tv_pos - curr_state)@(opt_state-curr_state)  ) >=1-eps
                     #                    ==>   sp.erfinv(1-eps)*||(tv_pos-curr_state)@(noise_covar + tv_covar)|| >=  -(tv_pos - curr_state)@(opt_state-curr_state)
-
-                    
-                    
                     
                     # opt_state[k, :]+noise_correction[k] = A_rob[k, :]@curr_state + B_rob[k,:]@opt_controls+  + C_rob +     B_rob[k,:]@K_stack[k][j]@(O_stack[j]- E[O_stack[j]]) + E_rob@W_t
                     # noise_correction[k]   =  B_rob[k,:]@K_stack[k][j]@E_obs[k][j]@N_t + E_rob@W_t
@@ -294,7 +271,6 @@ class MM_MPC(MPC_Base):
 
                     opti.subject_to(rv_dist@rv_dist.T<=opt_epsilon_r[t-1]+nom_dist)
                     opti.subject_to(nom_dist>=-opt_epsilon_r[t-1])
-
 
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
                             'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
@@ -346,6 +322,8 @@ class MM_MPC(MPC_Base):
         self.prediction_cache = {agent_id: np.empty((3, self.N+1)) for agent_id in range(self.num_agent)}
         self.control_cache = {agent_id: np.empty((2, self.N)) for agent_id in range(self.num_agent)}
 
+        self.setup_visualization()
+        
         # parallelized implementation
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
@@ -360,6 +338,11 @@ class MM_MPC(MPC_Base):
     
             pool.close()
             pool.join()
+
+            current_uncontrolled_state = self.uncontrolled_traj[self.num_timestep]
+            gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
+
+            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0])
     
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
@@ -377,9 +360,6 @@ class MM_MPC(MPC_Base):
             self.num_timestep += 1
             time_2 = time.time()
             self.avg_comp_time.append(time_2-time_1)
-
-        
-
 
         if self.is_solution_valid(self.state_cache):
             print("Executed solution is GOOD!")

@@ -1,13 +1,15 @@
 # from mpc import MPC
 from mm_mpc import MM_MPC
+from mpc import MPC
+from branch_mpc import Branch_MPC
 import numpy as np
 from utils import *
 import matplotlib.pyplot as plt
 from uncontrolled_agent import UncontrolledAgent
 
 if __name__ == "__main__":
-    initial_states = [[5.0, 0.0, 0.0]]
-    final_states = [[0.0, 2.0, 0.0]]
+    initial_states = [[4.0, 0.0, 0.0]]
+    final_states = [[0.0, 0.0, 0.0]]
 
     cost_func_params = {
         'Q':  np.array([[5*7.0, 0.0, 0.0], [0.0, 5*7.0, 0.0], [0.0, 0.0, 2.5]]),
@@ -44,7 +46,7 @@ if __name__ == "__main__":
     trial = 1
 
     uncontrolled_agent = UncontrolledAgent(dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'])
-    predictions, uncontrolled_traj = uncontrolled_agent.simulate_diff_drive()
+    predictions, uncontrolled_traj, mode_probabilities = uncontrolled_agent.simulate_diff_drive()
 
     mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map)
     mpc.simulate()

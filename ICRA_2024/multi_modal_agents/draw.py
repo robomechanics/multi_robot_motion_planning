@@ -18,7 +18,7 @@ class Draw_MPC_point_stabilization_v1(object):
 
         self.rob_radius = rob_dia / 2.0
         self.fig = plt.figure()
-        self.ax = plt.axes(xlim=(-1, 4), ylim=(-1, 5))
+        self.ax = plt.axes(xlim=(-1, 10), ylim=(-1, 10))
         self.fig.set_size_inches(7, 6.5)
         # self.animation_init()
         skip_frames = 3
