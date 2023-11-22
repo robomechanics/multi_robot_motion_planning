@@ -26,7 +26,7 @@ if __name__ == "__main__":
         'kappa': 3 
     }
     mpc_params = {
-        'num_agents': 12,
+        'num_agents': 1,
         'dt': 0.05,
         'N' : 60,
         'rob_dia': 0.3,

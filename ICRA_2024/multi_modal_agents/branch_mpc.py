@@ -7,33 +7,48 @@ import multiprocessing as mp
 from utils import *
 import scipy.special as sp
 
-class MPC(MPC_Base):    
+class Branch_MPC(MPC_Base):    
     def run_single_mpc(self, agent_id, current_state, inter_rob_constraints):
         # casadi parameters
         opti = ca.Opti()
 
-        opt_states = opti.variable(self.N + 1, 3)
-        opt_x = opt_states[:,0]
-        opt_y = opt_states[:,1]
+        opt_states = [opti.variable(self.N+1, 3) for k in range(self.num_modes)]            
+        opt_x = ca.horzcat(*[opt_states[k][:, 0] for k in range(self.num_modes)])
+        opt_y = ca.horzcat(*[opt_states[k][:, 1] for k in range(self.num_modes)])
 
-        opt_controls = opti.variable(self.N, 2)
-        v = opt_controls[:,0]
-        omega = opt_controls[:, 1]
+        opt_controls = [opti.variable(self.N, 2) for k in range(self.num_modes)]
+        v = ca.horzcat(*[opt_controls[k][:, 0] for k in range(self.num_modes)])
+        omega = ca.horzcat(*[opt_controls[k][:, 1] for k in range(self.num_modes)])
         
-        opt_epsilon_o = opti.variable(self.N+1, 1)
-        opt_epsilon_r = opti.variable(self.N+1, 1)
+        opt_epsilon_o = [opti.variable(self.N+1, 1) for k in range(self.num_modes)]
+        opt_epsilon_r = [opti.variable(self.N+1, 1) for k in range(self.num_modes)]
+
+        self.prev_states = {agent_id: [np.zeros((self.N+1, 3)) for _ in range(self.num_modes)] for agent_id in range(self.num_agent)}
+        self.prev_controls = {agent_id: [np.zeros((self.N, 2)) for _ in range(self.num_modes)] for agent_id in range(self.num_agent)}
+        self.prev_epsilon_o = {agent_id: [np.zeros((self.N+1, 1)) for _ in range(self.num_modes)] for agent_id in range(self.num_agent)}
+        self.prev_epsilon_r = {agent_id: [np.zeros((self.N+1, 1)) for _ in range(self.num_modes)] for agent_id in range(self.num_agent)}
 
         # parameters
         opt_x0 = opti.parameter(3)
         opt_xs = opti.parameter(3)
 
         # init_condition
-        opti.subject_to(opt_states[0, :] == opt_x0.T)
-        for j in range(self.N):
-            x_next = opt_states[j, :] + self.f(opt_states[j, :], opt_controls[j, :]).T*self.dt
-            opti.subject_to(opt_states[j+1, :] == x_next)
-            opti.subject_to(opti.bounded(0, opt_epsilon_o[j], ca.inf))
-            opti.subject_to(opti.bounded(0, opt_epsilon_r[j], ca.inf))
+        for m in range(self.num_modes):
+            opti.subject_to(opt_states[m][0,:] == opt_x0.T)
+
+        for n in range(self.N):
+            for m in range(self.num_modes):
+                ### Needs to fix this
+                x_next = opt_states[m][n,:] + self.f(opt_states[m][n,:], opt_controls[m][n,:]).T * self.dt
+                opti.subject_to(opt_states[m][n+1,:] == x_next)
+                opti.subject_to(opti.bounded(0, opt_epsilon_o[m][n,:], ca.inf))
+                opti.subject_to(opti.bounded(0, opt_epsilon_r[m][n,:], ca.inf))
+
+        for n in range(self.robust_horizon):
+            for i in range(self.num_modes):
+                for j in range(i + 1, self.num_modes):
+                    opti.subject_to(opt_states[i][n, :] == opt_states[j][n, :])
+                    opti.subject_to(opt_controls[i][n, :] == opt_controls[j][n, :])
 
         # define the cost function
         robot_cost = 0  # cost
@@ -47,20 +62,21 @@ class MPC(MPC_Base):
         # ref_seg = self.extract_trajectory_segment(current_state)
         # ref = np.array([[d['x'], d['y']] for d in ref_seg[agent_id]])
 
+        mode_prob = self.mode_prob[self.num_timestep]
         for k in range(self.N):
+            for m in range(self.num_modes):
             # if self.ref:
             #     curr_ref = ref[k,:].reshape(1,2)
             #     robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
             #                             ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + ca.mtimes([(opt_states[k, :2]-curr_ref), P, (opt_states[k, :2]-curr_ref).T]) + 100000 * opt_epsilon_o[k]
             # else: 
-            robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
-                                        ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) +  100000 * opt_epsilon_r[k]
+                mode_weight = mode_prob[m]
+                robot_cost = robot_cost + mode_weight * (ca.mtimes([(opt_states[m][k, :]-opt_xs.T), Q, (opt_states[m][k, :]-opt_xs.T).T]
+                                            ) + ca.mtimes([opt_controls[m][k, :], R, opt_controls[m][k, :].T])) +  100000 * opt_epsilon_r[m][k]
             
-        # robot_cost = robot_cost + ca.mtimes([(opt_states[self.N, :]-opt_xs.T), P, (opt_states[self.N, :]-opt_xs.T).T])
-
         total_cost = robot_cost + collision_cost
         opti.minimize(total_cost)
-
+ 
         # boundrary and control conditions
         opti.subject_to(opti.bounded(-10.0, opt_x, 10.0))
         opti.subject_to(opti.bounded(-10.0, opt_y, 10.0))
@@ -89,13 +105,10 @@ class MPC(MPC_Base):
                 covariances = prediction['covariances']
                 
                 for timestep, (mean, covariance) in enumerate(zip(means, covariances)):
-                    pi = opt_states[timestep,:]
+                    pi = opt_states[mode][timestep,:]
                     pj = np.array(mean[:2])
 
-                    rob_rob_constraint = ca.sqrt((pi[0]-pj[0])**2 + (pi[1]-pj[1])**2) - 2* self.rob_dia + opt_epsilon_r[timestep]
-                    # aij = (pi[:,:2]-pj) / ca.norm_2(pi[:,:2]-pj)
-                    # bij = self.rob_dia*2
-                    # rob_rob_constraint = aij@(pi[:,:2]-pj).T - bij
+                    rob_rob_constraint = ca.sqrt((pi[0]-pj[0])**2 + (pi[1]-pj[1])**2) - 2* self.rob_dia + opt_epsilon_r[mode][timestep]
                     opti.subject_to(rob_rob_constraint >= 0)
 
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
@@ -110,9 +123,12 @@ class MPC(MPC_Base):
         opti.set_value(opt_x0, current_state)
 
         # set optimizing target withe init guess
-        opti.set_initial(opt_controls, self.prev_controls[agent_id])  # (N, 2)
-        opti.set_initial(opt_states, self.prev_states[agent_id])  # (N+1, 3)
-        opti.set_initial(opt_epsilon_o, self.prev_epsilon_o[agent_id])
+        for mode in range(self.num_modes):
+            # Set the initial value for each mode of each agent
+            opti.set_initial(opt_states[mode], self.prev_states[agent_id][mode])
+            opti.set_initial(opt_controls[mode], self.prev_controls[agent_id][mode])  # (N, 2)
+            opti.set_initial(opt_epsilon_o[mode], self.prev_epsilon_o[agent_id][mode])  # (N+1, 3)
+            opti.set_initial(opt_epsilon_r[mode], self.prev_epsilon_r[agent_id][mode])
                     
         # solve the optimization problem
         t_ = time.time()
@@ -121,10 +137,11 @@ class MPC(MPC_Base):
         print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
 
         # obtain the control input
-        u_res = sol.value(opt_controls)
-        next_states_pred = sol.value(opt_states)
-        eps_o = sol.value(opt_epsilon_o)
+        u_res = [opti.value(opt_controls[k]) for k in range(self.num_modes)]
+        next_states_pred = [opti.value(opt_states[k]) for k in range(self.num_modes)]
 
+        eps_o = [opti.value(opt_epsilon_o[k]) for k in range(self.num_modes)]
+        
         self.prev_states[agent_id] = next_states_pred
         self.prev_controls[agent_id] = u_res
         self.prev_epsilon_o[agent_id] = eps_o 
@@ -133,8 +150,8 @@ class MPC(MPC_Base):
     
     def simulate(self):
         self.state_cache = {agent_id: [] for agent_id in range(self.num_agent)}
-        self.prediction_cache = {agent_id: np.empty((3, self.N+1)) for agent_id in range(self.num_agent)}
-        self.control_cache = {agent_id: np.empty((2, self.N)) for agent_id in range(self.num_agent)}
+        self.prediction_cache = {agent_id: np.empty((3, self.N+1, self.num_modes)) for agent_id in range(self.num_agent)}
+        self.control_cache = {agent_id: np.empty((2, self.N, self.num_modes)) for agent_id in range(self.num_agent)}
         
         self.setup_visualization()
 
@@ -161,9 +178,9 @@ class MPC(MPC_Base):
             for agent_id, result in enumerate(results):
                 u, next_states_pred = result
                 current_state = np.array(self.current_state[agent_id])
-                next_state, u0, next_states = self.shift_movement(current_state, u, next_states_pred, self.f_np)
+                next_state, u0, next_states = self.shift_movement(current_state, u[0], next_states_pred[0], self.f_np)
 
-                self.prediction_cache[agent_id] = next_states_pred.T
+                self.prediction_cache[agent_id] = next_states_pred
                 self.control_cache[agent_id] = u
                 self.current_state[agent_id] = next_state
                 self.state_cache[agent_id].append(next_state)

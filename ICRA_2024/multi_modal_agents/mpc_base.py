@@ -4,9 +4,11 @@ from model import DiffDrive
 import math
 import matplotlib.pyplot as plt
 from metrics_logger import MetricsLogger
+from matplotlib.patches import Circle, Arrow
+from matplotlib.animation import FuncAnimation
 
 class MPC_Base:
-    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=None, ref=None):
+    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=None, ref=None, mode_prob=None):
         self.num_agent = mpc_params['num_agents']
         self.dt = mpc_params['dt']
         self.N = mpc_params['N']
@@ -25,7 +27,10 @@ class MPC_Base:
         self.trial = trial
         self.uncontrolled_agent = uncontrolled_agent
         self.uncontrolled_traj = uncontrolled_traj
+        self.mode_prob = mode_prob
         self.delta = 0.03
+        self.num_modes = 3
+        self.robust_horizon = 5
 
         self.model = DiffDrive(self.rob_dia)
 
@@ -194,6 +199,50 @@ class MPC_Base:
                 segment_dict[robot_id] = segment_waypoints
 
         return segment_dict
+
+    def setup_visualization(self):
+        # Initialize the figure and axis once
+        self.fig, self.ax = plt.subplots()
+        self.ax.set_title('GMM Means and Agent State Visualization')
+        self.ax.set_xlabel('X coordinate')
+        self.ax.set_ylabel('Y coordinate')
+        self.ax.set_xlim(-10, 10)  # Adjust these limits according to your scenario
+        self.ax.set_ylim(-10, 10)
+        plt.ion()  # Turn on interactive mode
+
+    def plot_gmm_means_and_state(self, current_state, current_prediction, gmm_data=None):
+        self.ax.clear()  # Clear the current axes
+
+        # Set the title and labels (since ax.clear() will remove them too)
+        self.ax.set_xlim(-4, 4)  # Adjust these limits according to your scenario
+        self.ax.set_ylim(-4, 4)
+
+        
+        # Plotting the GMM predictions as scattered points
+        colors = plt.cm.get_cmap('hsv', 3)
+        for mode, data in enumerate(gmm_data.values(), start=1):
+            means = np.array(data['means'])
+            self.ax.scatter(means[:, 0], means[:, 1])
+
+        # if(len(current_prediction) > 1):
+        #     for pred in current_prediction:
+        #         self.ax.plot(pred[:,0], pred[:,1])
+        # else:
+            self.ax.plot(current_prediction[0,:], current_prediction[1,:])
+        
+        # Plotting current state as a circle with an arrow for orientation
+        circle = plt.Circle((current_state[0], current_state[1]), 0.15, fill=True, color='blue')
+        self.ax.add_patch(circle)
+
+        # Assuming theta is in radians and the arrow shows the orientation
+        arrow_length = 0.3  # This should be scaled appropriately
+        arrow = plt.Arrow(current_state[0], current_state[1],
+                        arrow_length * np.cos(current_state[2]), arrow_length * np.sin(current_state[2]),
+                        width=0.1, color='yellow')
+        self.ax.add_patch(arrow)
+
+        plt.draw()
+        plt.pause(0.1)
 
     def simulate(self):
         raise NotImplementedError("Subclasses must implement the functionality")
