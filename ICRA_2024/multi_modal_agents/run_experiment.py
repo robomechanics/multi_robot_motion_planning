@@ -12,8 +12,8 @@ if __name__ == "__main__":
     final_states = [[0.0, 0.0, 0.0]]
 
     cost_func_params = {
-        'Q':  np.array([[5*7.0, 0.0, 0.0], [0.0, 5*7.0, 0.0], [0.0, 0.0, 2.5]]),
-        'R': np.array([[.5, 0.0], [0.0, 3.5]]),
+        'Q':  np.array([[7.0, 0.0, 0.0], [0.0, 7.0, 0.0], [0.0, 0.0, 2.5]]),
+        'R': np.array([[5.5, 0.0], [0.0, .5]]),
         'P': np.array([[12.5, 0.0], [0.0, 12.5]]),
         'Qc': 8,
         'kappa': 3 
@@ -21,7 +21,7 @@ if __name__ == "__main__":
     mpc_params = {
         'num_agents': 1,
         'dt': 0.1,
-        'N' : 20,
+        'N' : 12,
         'rob_dia': 0.3,
         'v_lim': 1.0,
         'omega_lim': 1.0,
@@ -48,7 +48,8 @@ if __name__ == "__main__":
     uncontrolled_agent = UncontrolledAgent(dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'])
     predictions, uncontrolled_traj, mode_probabilities = uncontrolled_agent.simulate_diff_drive()
 
-    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map)
+    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+    # mpc = Branch_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map)
     mpc.simulate()
 
 

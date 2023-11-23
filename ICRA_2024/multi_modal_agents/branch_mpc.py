@@ -105,10 +105,11 @@ class Branch_MPC(MPC_Base):
                 covariances = prediction['covariances']
                 
                 for timestep, (mean, covariance) in enumerate(zip(means, covariances)):
-                    pi = opt_states[mode][timestep,:]
-                    pj = np.array(mean[:2])
+                    pi = ca.vec(opt_states[mode][timestep,:])
+                    pj = ca.vec(np.array(mean[:2]))
 
-                    rob_rob_constraint = ca.sqrt((pi[0]-pj[0])**2 + (pi[1]-pj[1])**2) - 2* self.rob_dia + opt_epsilon_r[mode][timestep]
+                    rob_rob_constraint = ca.sqrt((pi[0]-pj[0])**2 + (pi[1]-pj[1])**2) - 2* self.rob_dia + opt_epsilon_r[mode][timestep]\
+                                        -sp.erf(1-2*self.delta)*ca.sqrt(2*(pi-pj).T@covariance[:2,:2]@(pi-pj))
                     opti.subject_to(rob_rob_constraint >= 0)
 
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
