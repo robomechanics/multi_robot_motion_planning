@@ -112,7 +112,7 @@ class MM_MPC(MPC_Base):
 
         return T_obs, c_obs, E_obs
 
-    def run_single_mpc(self, agent_id, current_state, inter_rob_constraints, rob_horizon = 3, linearized_ca = True):
+    def run_single_mpc(self, agent_id, current_state, inter_rob_constraints, rob_horizon = 1, linearized_ca = True):
         # casadi parameters
         opti = ca.Opti()
 
