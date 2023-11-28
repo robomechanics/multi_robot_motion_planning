@@ -45,7 +45,6 @@ class MM_MPC(MPC_Base):
                 x_lin[t+1,:]=self.model.fCd(x_lin[t,:], u_lin[t,:])
 
         for t in range(self.N):
-            
             # if u_lin[t,0] > 0 and u_lin[t,0] < 0.1 :
             #     u_lin[t,0]=0.1
             # elif u_lin[t,0] < 0 and u_lin[t,0]> -0.1:
@@ -91,10 +90,8 @@ class MM_MPC(MPC_Base):
         o_{t+N}= o_{t|t} + dt*[cos\theta_t; sin\theta_t]v_t+ .... + dt*[cos\theta_(t+N-1); sin\theta_(t+N-1)]v_(t+N-1) + n_t +... n_{t+N-1}
         """ 
         T_obs=ca.DM(2*(self.N+1), 2)
-        
         c_obs=ca.DM(2*(self.N+1), 1) 
         E_obs=ca.DM(2*(self.N+1),self.N)
-
 
         for t in range(self.N+1):
             T_obs[t*2:(t+1)*2,:]=ca.DM.eye(2)
@@ -112,7 +109,7 @@ class MM_MPC(MPC_Base):
 
         return T_obs, c_obs, E_obs
 
-    def run_single_mpc(self, agent_id, current_state, inter_rob_constraints, rob_horizon = 1, linearized_ca = True):
+    def run_single_mpc(self, agent_id, current_state, inter_rob_constraints, linearized_ca = False):
         # casadi parameters
         opti = ca.Opti()
 
@@ -132,9 +129,9 @@ class MM_MPC(MPC_Base):
         # U_stack[j] = opt_controls + sum_i=1^{N_obs} K_stack[i][j]@(O_stack[i][j] - E[O_stack[i][j]])
         #### 
         # nominal feedforward controls
-        rob_horizon_u = opti.variable(rob_horizon, 2)
+        rob_horizon_u = opti.variable(self.robust_horizon, 2)
         
-        opt_controls = [ca.vertcat(rob_horizon_u, opti.variable(self.N-rob_horizon,2)) for _ in range(n_modes)]
+        opt_controls = [ca.vertcat(rob_horizon_u, opti.variable(self.N-self.robust_horizon,2)) for _ in range(n_modes)]
         opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(n_modes)]
         # v = opt_controls[:,0]
         # omega = opt_controls[:, 1]
@@ -161,8 +158,6 @@ class MM_MPC(MPC_Base):
 
         # opt_epsilon_o = opti.variable(self.N+1, 1)
         
-        
-
         # parameters
         # opt_x0 = opti.parameter(3)
         opt_xs = opti.parameter(3)
@@ -212,11 +207,10 @@ class MM_MPC(MPC_Base):
         ##### Get chance constraints from the given GMM prediction
         ## aij = (pi - pj) / ||pi - pj|| and bij = ri + rj 
         ## aij^T(pi - pj) - bij >= erf^-1(1 - 2delta)sqrt(2*aij^T(sigma_i + sigma_j)aij)    
-
         pol_gains = []
         T_obs, c_obs, E_obs=[], [], []
 
-        K_rob_horizon = [opti.variable(2,2) for t in range(rob_horizon-1)]
+        K_rob_horizon = [opti.variable(2,2) for t in range(self.robust_horizon-1)]
 
         for agent_prediction, agent_noise in zip(gmm_predictions, noise_chars):
             T_obs_k, c_obs_k, E_obs_k=[], [], []
@@ -229,7 +223,7 @@ class MM_MPC(MPC_Base):
                 mean_inputs  = agent_noise[mode]['means']
                 covar_inputs = agent_noise[mode]['covariances']
 
-                K=K_rob_horizon+[opti.variable(2,2) for t in range(self.N-rob_horizon)]
+                K = K_rob_horizon+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
                 K_stack=ca.diagcat(ca.DM(2,2),*[K[t] for t in range(self.N-1)]) 
 
                 obs_xy_cov = ca.diagcat(*[ covariances[i][:2,:2] for i in range(self.N)])
@@ -252,8 +246,6 @@ class MM_MPC(MPC_Base):
         for k, agent_prediction in enumerate(gmm_predictions):
             for j, prediction in agent_prediction.items():
                 for t in range(1,self.N):
-               
-                    
                     if linearized_ca:
                         ## Prob(||(tv_pos + tv_noise - opt_state- noise_correction)||_2^2 >= 4*self.rob^2_dia) >= 1-epsilon
                         ## g(o,p) = || o -p |||^2,   l(o,p) = g(o_0, p_0) +  dg_p(p-p_0) + dg_o (o-o_0)
@@ -272,25 +264,22 @@ class MM_MPC(MPC_Base):
                         ## opt_state[k, :]+noise_correction[k] = A_rob[k, :]@curr_state + B_rob[k,:]@opt_controls+  + C_rob +     B_rob[k,:]@K_stack[k][j]@(O_stack[j]- E[O_stack[j]]) + E_rob@W_t
                         ## noise_correction[k]   =  B_rob[k,:]@K_stack[k][j]@E_obs[k][j]@N_t + E_rob@W_t
                         
-                        
                         tv_pos   = ca.DM(prediction['means'][t-1][:2])
                         if type(self.prev_states[agent_id])==type([]):
                             ref_pos = self.prev_states[agent_id][j][t,:2].T
                         else:
                             ref_pos = ca.DM(current_state)[:2]
 
-
                         rob_proj = tv_pos+2*self.rob_dia*(ref_pos-tv_pos)/ca.norm_2(ref_pos-tv_pos)
-                    
                         
                         rv_dist  = sp.erfinv(1-2*self.delta)*(rob_proj-tv_pos).T@(2*ca.horzcat(E_rob[j][t*3:(t+1)*3-1,:],*[B_rob[j][t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][:-2,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(n_obs)]))
                         
-                        nom_dist = (rob_proj-tv_pos).T@(opt_states[j][t, :2].T-rob_proj)
+                        nom_dist = (rob_proj-tv_pos).T@(opt_states[j][t,:2].T-rob_proj)
 
                         opti.subject_to(rv_dist@rv_dist.T<=(opt_epsilon_r[j][t-1]+nom_dist)**2)
                         opti.subject_to(nom_dist>=-opt_epsilon_r[j][t-1])
                     else:
-
+                        tv_pos   = ca.DM(prediction['means'][t-1][:2])
                         ##### Get chance constraints from the given GMM prediction
                         ## aij =(pi + Eini - pj- Ejnj)  and bij = ri + rj 
                         ##     P[ aij^T@aij <= bij**2 ]< eps  
@@ -310,8 +299,6 @@ class MM_MPC(MPC_Base):
                         rob_rob_constraint = self.delta*(Var_ + lmbd_**2) - Var_
                         opti.subject_to(rob_rob_constraint >= -opt_epsilon_r[j][t-1])
 
-                    
-
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
                             'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
                             'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
@@ -326,7 +313,6 @@ class MM_MPC(MPC_Base):
 
         # # set optimizing target withe init guess
         for j in range(n_modes):
-           
             if type(self.prev_controls[agent_id])!=type([]):
                 opti.set_initial(opt_controls[j], self.prev_controls[agent_id])  # (N, 2)
             else:
@@ -349,19 +335,17 @@ class MM_MPC(MPC_Base):
                 next_states_pred[j].append(self.model.fCd(next_states_pred[j][-1], u_res[j][t,:]).T)
             next_states_pred[j] = ca.vertcat(*next_states_pred[j])
         # eps_o = sol.value(opt_epsilon_o)
-   
         self.prev_states[agent_id] = next_states_pred
         self.prev_controls[agent_id] = u_res
         self.prev_pol = pol_gains
-        
         # self.prev_epsilon_o[agent_id] = eps_o 
   
-        return u_res[0], next_states_pred[0]
+        return u_res, next_states_pred
     
     def simulate(self):
         self.state_cache = {agent_id: [] for agent_id in range(self.num_agent)}
-        self.prediction_cache = {agent_id: np.empty((3, self.N+1)) for agent_id in range(self.num_agent)}
-        self.control_cache = {agent_id: np.empty((2, self.N)) for agent_id in range(self.num_agent)}
+        self.prediction_cache = {agent_id: np.empty((3, self.N+1, self.num_modes)) for agent_id in range(self.num_agent)}
+        self.control_cache = {agent_id: np.empty((2, self.N, self.num_modes)) for agent_id in range(self.num_agent)}
 
         self.setup_visualization()
         
@@ -389,14 +373,13 @@ class MM_MPC(MPC_Base):
             for agent_id, result in enumerate(results):
                 u, next_states_pred = result
                 current_state = np.array(self.current_state[agent_id])
-                next_state, u0, next_states = self.shift_movement(current_state, u, next_states_pred, self.f_np)
+                next_state, u0, next_states = self.shift_movement(current_state, u[0], next_states_pred[0], self.f_np)
 
                 self.prediction_cache[agent_id] = next_states_pred
                 self.control_cache[agent_id] = u
                 self.current_state[agent_id] = next_state
                 self.state_cache[agent_id].append(next_state)
-
-                print("Agent state: ", next_state, " Agent control: ", u[0,:])
+                # print("Agent state: ", next_state, " Agent control: ", u[0,:])
 
             self.num_timestep += 1
             time_2 = time.time()

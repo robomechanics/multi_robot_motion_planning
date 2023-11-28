@@ -29,8 +29,8 @@ class MPC_Base:
         self.uncontrolled_traj = uncontrolled_traj
         self.mode_prob = mode_prob
         self.delta = 0.03
-        self.num_modes = 3
-        self.robust_horizon = 5
+        self.num_modes = 2
+        self.robust_horizon = 1
 
         self.model = DiffDrive(self.rob_dia)
 
@@ -224,10 +224,10 @@ class MPC_Base:
             means = np.array(data['means'])
             self.ax.scatter(means[:, 0], means[:, 1])
 
-        # if(len(current_prediction) > 1):
-        #     for pred in current_prediction:
-        #         self.ax.plot(pred[:,0], pred[:,1])
-        # else:
+        if(len(current_prediction) > 1):
+            for pred in current_prediction:
+                self.ax.plot(pred[:,0], pred[:,1])
+        else:
             self.ax.plot(current_prediction[0,:], current_prediction[1,:])
         
         # Plotting current state as a circle with an arrow for orientation
