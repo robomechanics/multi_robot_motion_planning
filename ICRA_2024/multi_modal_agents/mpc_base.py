@@ -20,6 +20,7 @@ class MPC_Base:
         self.epsilon_o = mpc_params['epsilon_o']
         self.epsilon_r = mpc_params['epsilon_r']
         self.safety_margin = mpc_params['safety_margin']
+        self.linearized_ca = mpc_params['linearized_ca']
         self.initial_state = initial_state
         self.final_state = final_state
         self.cost_func_params = cost_func_params
@@ -29,7 +30,7 @@ class MPC_Base:
         self.uncontrolled_traj = uncontrolled_traj
         self.mode_prob = mode_prob
         self.delta = 0.03
-        self.num_modes = 2
+        self.num_modes = 3
         self.robust_horizon = 1
 
         self.model = DiffDrive(self.rob_dia)

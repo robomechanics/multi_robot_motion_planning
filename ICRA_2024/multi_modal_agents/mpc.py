@@ -83,20 +83,42 @@ class MPC(MPC_Base):
         current_uncontrolled_state = self.uncontrolled_traj[self.num_timestep]
         gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
 
-        for agent_prediction in gmm_predictions:
-            for mode, prediction in agent_prediction.items():
-                means = prediction['means']
-                covariances = prediction['covariances']
-                
-                for timestep, (mean, covariance) in enumerate(zip(means, covariances)):
-                    pi = opt_states[timestep,:]
-                    pj = np.array(mean[:2])
+        for k, agent_prediction in enumerate(gmm_predictions):
+            for j, prediction in agent_prediction.items():
+                for t in range(1,self.N):
+                    if self.linearized_ca:
+                        tv_pos = ca.DM(prediction['means'][t-1][:2])
+                        if type(self.prev_states[agent_id])==type([]):
+                            ref_pos = self.prev_states[agent_id][j][t,:2].T
+                        else:
+                            ref_pos = ca.DM(current_state)[:2]
+                        
+                        rob_proj = tv_pos+2*self.rob_dia*(ref_pos-tv_pos)/ca.norm_2(ref_pos-tv_pos)
+                        nom_dist = (rob_proj-tv_pos).T@(opt_states[t,:2].T-rob_proj)
 
-                    rob_rob_constraint = ca.sqrt((pi[0]-pj[0])**2 + (pi[1]-pj[1])**2) - 2* self.rob_dia + opt_epsilon_r[timestep]
-                    # aij = (pi[:,:2]-pj) / ca.norm_2(pi[:,:2]-pj)
-                    # bij = self.rob_dia*2
-                    # rob_rob_constraint = aij@(pi[:,:2]-pj).T - bij
-                    opti.subject_to(rob_rob_constraint >= 0)
+                        opti.subject_to(nom_dist>=-opt_epsilon_r[t-1])
+
+                    else:
+                        tv_pos = ca.DM(prediction['means'][t-1][:2])
+                        rob_pos = ca.vec(opt_states[t,:])
+
+                        rob_rob_constraint = ca.sqrt((rob_pos[0]-tv_pos[0])**2 + (rob_pos[1]-tv_pos[1])**2) - 2* self.rob_dia + opt_epsilon_r[t]
+                        opti.subject_to(rob_rob_constraint >= 0)
+
+        # for agent_prediction in gmm_predictions:
+        #     for mode, prediction in agent_prediction.items():
+        #         means = prediction['means']
+        #         covariances = prediction['covariances']
+                
+        #         for timestep, (mean, covariance) in enumerate(zip(means, covariances)):
+        #             pi = opt_states[timestep,:]
+        #             pj = np.array(mean[:2])
+
+        #             rob_rob_constraint = ca.sqrt((pi[0]-pj[0])**2 + (pi[1]-pj[1])**2) - 2* self.rob_dia + opt_epsilon_r[timestep]
+        #             # aij = (pi[:,:2]-pj) / ca.norm_2(pi[:,:2]-pj)
+        #             # bij = self.rob_dia*2
+        #             # rob_rob_constraint = aij@(pi[:,:2]-pj).T - bij
+        #             opti.subject_to(rob_rob_constraint >= 0)
 
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
                             'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,

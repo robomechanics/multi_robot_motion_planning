@@ -30,7 +30,8 @@ if __name__ == "__main__":
         'epsilon_o': 0.05,
         'epsilon_r': 0.05,
         'safety_margin': 0.05,
-        'goal_tolerence': 0.2
+        'goal_tolerence': 0.2, 
+        'linearized_ca': True
     }
 
     obs_traj = []

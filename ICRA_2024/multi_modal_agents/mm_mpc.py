@@ -246,7 +246,7 @@ class MM_MPC(MPC_Base):
         for k, agent_prediction in enumerate(gmm_predictions):
             for j, prediction in agent_prediction.items():
                 for t in range(1,self.N):
-                    if linearized_ca:
+                    if self.linearized_ca:
                         ## Prob(||(tv_pos + tv_noise - opt_state- noise_correction)||_2^2 >= 4*self.rob^2_dia) >= 1-epsilon
                         ## g(o,p) = || o -p |||^2,   l(o,p) = g(o_0, p_0) +  dg_p(p-p_0) + dg_o (o-o_0)
 
