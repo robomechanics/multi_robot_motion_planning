@@ -4,7 +4,7 @@ from matplotlib.animation import FuncAnimation
 from visualizer import Visualizer
 
 class UncontrolledAgent:
-    def __init__(self, dt=0.2, T=5, H=10, min_action_duration=2, num_switches=2):
+    def __init__(self, dt=0.2, T=10, H=10, min_action_duration=1, num_switches=2):
         self.dt = dt
         self.T = T 
         self.H = H
@@ -13,13 +13,13 @@ class UncontrolledAgent:
         self.v_variance = 0.1
         self.num_switches = num_switches
         self.omega_variance = [0.1, 0.01, 0.1]  # Variances for omega corresponding to each action
-        self.action_prob = [0.6, 0.4]
+        self.action_prob = [0.2, 0.6, 0.2]
         self.actions = [
         (np.random.normal(0.5, self.v_variance), np.random.normal(0.4, self.omega_variance[0])), 
-        # (np.random.normal(0.5, self.v_variance), np.random.normal(0.0, self.omega_variance[1])), 
+        (np.random.normal(0.5, self.v_variance), np.random.normal(0.0, self.omega_variance[1])), 
         (np.random.normal(0.5, self.v_variance), np.random.normal(-0.4, self.omega_variance[2]))]
         self.noise_range = [-0.02, 0.02]
-        self.prior_likelihood = [0.5, 0.5]
+        self.prior_likelihood = [0.3, 0.4, 0.3]
         self.alpha = 0.2
         self.min_probability = 0.1
 
@@ -123,7 +123,6 @@ class UncontrolledAgent:
                 means.append([v, omega])  # The mean of v and omega is the action's value
                 covariance = np.diag([self.v_variance**2, self.omega_variance[mode]**2])  # Diagonal covariance matrix
                 covariances.append(covariance)
-
     
             # Assign the mean and covariance vectors to the corresponding mode
             agent_prediction[mode] = {
