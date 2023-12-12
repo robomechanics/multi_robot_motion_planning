@@ -154,7 +154,7 @@ class MM_MPC(MPC_Base):
             v.append(opt_controls[j][:,0])
             omega.append(opt_controls[j][:,1])
 
-            opti.subject_to(opti.bounded(0, opt_epsilon_r[j], ca.inf))
+            opti.subject_to(opti.bounded(0, opt_epsilon_r[j], 0.001))
 
         # opt_epsilon_o = opti.variable(self.N+1, 1)
         
@@ -319,26 +319,33 @@ class MM_MPC(MPC_Base):
                 opti.set_initial(opt_controls[j], self.prev_controls[agent_id][j])
             # opti.set_initial(opt_states, self.prev_states[agent_id])  # (N+1, 3)
             # opti.set_initial(opt_epsilon_o, self.prev_epsilon_o[agent_id])
-                    
-        # solve the optimization problem
-        t_ = time.time()
-        sol = opti.solve()
-        solve_time = time.time() - t_
-        print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
 
-        # obtain the control input
-        u_res = [sol.value(opt_controls[j]) for j in range(n_modes)]
-        # next_states_pred = sol.value(opt_states)
-        next_states_pred = [[ca.DM(current_state).T] for j in range(n_modes)]
-        for j in range(n_modes):
-            for t in range(u_res[j].shape[0]):
-                next_states_pred[j].append(self.model.fCd(next_states_pred[j][-1], u_res[j][t,:]).T)
-            next_states_pred[j] = ca.vertcat(*next_states_pred[j])
-        # eps_o = sol.value(opt_epsilon_o)
-        self.prev_states[agent_id] = next_states_pred
-        self.prev_controls[agent_id] = u_res
-        self.prev_pol = pol_gains
-        # self.prev_epsilon_o[agent_id] = eps_o 
+        u_res = None
+        next_states_pred = None
+
+        try:     
+            # solve the optimization problem
+            t_ = time.time()
+            sol = opti.solve()
+            solve_time = time.time() - t_
+            print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
+
+            # obtain the control input
+            u_res = [sol.value(opt_controls[j]) for j in range(n_modes)]
+            # next_states_pred = sol.value(opt_states)
+            next_states_pred = [[ca.DM(current_state).T] for j in range(n_modes)]
+            for j in range(n_modes):
+                for t in range(u_res[j].shape[0]):
+                    next_states_pred[j].append(self.model.fCd(next_states_pred[j][-1], u_res[j][t,:]).T)
+                next_states_pred[j] = ca.vertcat(*next_states_pred[j])
+            # eps_o = sol.value(opt_epsilon_o)
+            self.prev_states[agent_id] = next_states_pred
+            self.prev_controls[agent_id] = u_res
+            self.prev_pol = pol_gains
+            # self.prev_epsilon_o[agent_id] = eps_o 
+        
+        except RuntimeError as e:
+            print("Infeasible solve")
   
         return u_res, next_states_pred
     
@@ -367,19 +374,24 @@ class MM_MPC(MPC_Base):
             current_uncontrolled_state = self.uncontrolled_traj[self.num_timestep]
             gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
 
-            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0])
+            mode_prob = self.mode_prob[self.num_timestep] 
+            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0], mode_prob)
     
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
                 u, next_states_pred = result
-                current_state = np.array(self.current_state[agent_id])
-                next_state, u0, next_states = self.shift_movement(current_state, u[0], next_states_pred[0], self.f_np)
+                if u is None:
+                    self.infeasible = True
+                    break
+                else:
+                    current_state = np.array(self.current_state[agent_id])
+                    next_state, u0, next_states = self.shift_movement(current_state, u[0], next_states_pred[0], self.f_np)
 
-                self.prediction_cache[agent_id] = next_states_pred
-                self.control_cache[agent_id] = u
-                self.current_state[agent_id] = next_state
-                self.state_cache[agent_id].append(next_state)
-                # print("Agent state: ", next_state, " Agent control: ", u[0,:])
+                    self.prediction_cache[agent_id] = next_states_pred
+                    self.control_cache[agent_id] = u
+                    self.current_state[agent_id] = next_state
+                    self.state_cache[agent_id].append(next_state)
+                    # print("Agent state: ", next_state, " Agent control: ", u[0,:])
 
             self.num_timestep += 1
             time_2 = time.time()
@@ -395,13 +407,13 @@ class MM_MPC(MPC_Base):
         else:
             self.success = False
         
-        run_description = "MPC_" + self.scenario 
+        run_description = self.scenario 
 
         self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached)
         self.logger.print_metrics_summary()
         self.logger.save_metrics_data()
         
         # draw function
-        draw_result = Draw_MPC_point_stabilization_v1(
-            rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs)
+        # draw_result = Draw_MPC_point_stabilization_v1(
+        #     rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs)
         
