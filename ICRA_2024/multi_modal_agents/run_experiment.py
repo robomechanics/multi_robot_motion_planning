@@ -1,3 +1,5 @@
+# from mpc import MPC
+from mm_mpc import MM_MPC
 from mpc import MPC
 from branch_mpc import Branch_MPC
 import numpy as np
@@ -6,29 +8,30 @@ import matplotlib.pyplot as plt
 from uncontrolled_agent import UncontrolledAgent
 
 if __name__ == "__main__":
-    initial_states = [[4.0, 0.0, 0.0]]
+    initial_states = [[3.0, 0.0, 0.0]]
     final_states = [[0.0, 0.0, 0.0]]
 
     cost_func_params = {
-        'Q':  np.array([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, .1]]),
-        'R': np.array([[12.5, 0.0], [0.0, 0.05]]),
-        'P': np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 5.0]]),
+        'Q': np.array([[7.0, 0.0, 0.0], [0.0, 7.0, 0.0], [0.0, 0.0, 2.5]]),
+        'R': np.array([[5.5, 0.0], [0.0, .5]]),
+        'P': np.array([[12.5, 0.0], [0.0, 12.5]]),
         'Qc': 8,
         'kappa': 3 
     }
     mpc_params = {
         'num_agents': 1,
-        'dt': 0.1,
-        'N' : 30,
+        'dt': 0.2,
+        'N' : 10,
         'rob_dia': 0.3,
         'v_lim': 1.0,
         'omega_lim': 1.0,
-        'total_sim_timestep': 200,
+        'total_sim_timestep': 100,
         'obs_sim_timestep': 100,
         'epsilon_o': 0.05,
         'epsilon_r': 0.05,
         'safety_margin': 0.05,
-        'goal_tolerence': 0.2
+        'goal_tolerence': 0.2, 
+        'linearized_ca': True
     }
 
     obs_traj = []
@@ -38,18 +41,26 @@ if __name__ == "__main__":
 
     map_size = (15,15)
     obstacle_density = 0.0
-    map = generate_map(map_size, 0)
+    # map = generate_map(map_size, 0)
 
-    scenario = "test_1_robot"
-    trial = 1
+    num_trials = 5
+    algs = ["MM-MPC", "Branch-MPC", "MPC"]
 
-    uncontrolled_agent = UncontrolledAgent()
-    predictions, uncontrolled_traj, mode_probabilities = uncontrolled_agent.simulate_diff_drive()
-
-    # mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map)
-    # mpc.simulate()
-    
-    mpc = Branch_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
-    mpc.simulate()
+    for trial in range(num_trials):
+        uncontrolled_agent = UncontrolledAgent(dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'])
+        predictions, uncontrolled_traj, mode_probabilities = uncontrolled_agent.simulate_diff_drive()
+        
+        for alg in algs:
+            scenario = alg + str(trial)
+            if alg == "MM-MPC":
+                mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+                mpc.simulate()
+            if alg == "Branch-MPC":
+                mpc = Branch_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+                mpc.simulate()
+            else:
+                mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+                mpc.simulate()
+            
 
 
