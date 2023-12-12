@@ -61,6 +61,7 @@ class MPC_Base:
         # check for failures after simulation is done
         self.max_time_reached = False
         self.execution_collision = False
+        self.infeasible = False
 
         # metrics for logging
         self.algorithm_name = ""
@@ -150,7 +151,9 @@ class MPC_Base:
         return False
 
     def is_solution_valid(self, state_cache):
-        if self.check_for_collisions(state_cache):
+        if self.infeasible:
+            return False
+        elif self.check_for_collisions(state_cache):
             print("Executed trajectory has collisions")
             self.execution_collision = True
             return False
@@ -202,45 +205,66 @@ class MPC_Base:
         return segment_dict
 
     def setup_visualization(self):
-        # Initialize the figure and axis once
-        self.fig, self.ax = plt.subplots()
+        self.fig = plt.figure(figsize=(12, 6))  # Adjust the figure size as needed
+
+        # Main plot for GMM Means and Agent State Visualization
+        self.ax = plt.subplot2grid((1, 2), (0, 0), rowspan=1, colspan=1)
         self.ax.set_title('GMM Means and Agent State Visualization')
         self.ax.set_xlabel('X coordinate')
         self.ax.set_ylabel('Y coordinate')
-        self.ax.set_xlim(-10, 10)  # Adjust these limits according to your scenario
+        self.ax.set_xlim(-10, 10)
         self.ax.set_ylim(-10, 10)
+
+        # Subplot for Mode Probabilities
+        self.ax_prob = plt.subplot2grid((1, 2), (0, 1), rowspan=1, colspan=1)
+        self.ax_prob.set_xlabel('Modes')
+        self.ax_prob.set_ylabel('Probability')
+        self.ax_prob.set_ylim(0, 1)  # Assuming probabilities are between 0 and 1
+
         plt.ion()  # Turn on interactive mode
 
-    def plot_gmm_means_and_state(self, current_state, current_prediction, gmm_data=None):
-        self.ax.clear()  # Clear the current axes
+    def plot_gmm_means_and_state(self, current_state, current_prediction, gmm_data=None, mode_prob=None):
+        self.ax.clear()  # Clear the main axes
+        self.ax_prob.clear()  # Clear the mode probability axes
 
-        # Set the title and labels (since ax.clear() will remove them too)
-        self.ax.set_xlim(-4, 4)  # Adjust these limits according to your scenario
+        # Set the title and labels for the main plot
+        self.ax.set_xlim(-4, 4)
         self.ax.set_ylim(-4, 4)
 
-        
         # Plotting the GMM predictions as scattered points
-        colors = plt.cm.get_cmap('hsv', 3)
-        for mode, data in enumerate(gmm_data.values(), start=1):
+        colors = plt.cm.get_cmap('hsv', len(gmm_data)+1)
+        for mode, data in enumerate(gmm_data.values(), start=0):
             means = np.array(data['means'])
-            self.ax.scatter(means[:, 0], means[:, 1])
+            cov = np.array(data['covariances'])
+            for mean, cov_matrix in zip(means, cov):
+                # Assume the covariance matrix is 2x2 and compute the radius for the circle
+                # Here, we're taking the average of the variances for simplicity
+                radius = np.sqrt((cov_matrix[0, 0] + cov_matrix[1, 1]) / 2)
+                circle = plt.Circle((mean[0], mean[1]), radius, color=colors(mode), alpha=0.2)
+                self.ax.add_patch(circle)
 
-        if(len(current_prediction) > 1):
+        # Plotting predictions
+        if(isinstance(current_prediction, list)):
             for pred in current_prediction:
-                self.ax.plot(pred[:,0], pred[:,1])
+                self.ax.plot(pred[:, 0], pred[:, 1])
         else:
-            self.ax.plot(current_prediction[0,:], current_prediction[1,:])
-        
-        # Plotting current state as a circle with an arrow for orientation
+            self.ax.plot(current_prediction[0, :], current_prediction[1, :])
+
+        # Plotting current state with a circle and arrow
         circle = plt.Circle((current_state[0], current_state[1]), 0.15, fill=True, color='blue')
         self.ax.add_patch(circle)
-
-        # Assuming theta is in radians and the arrow shows the orientation
-        arrow_length = 0.3  # This should be scaled appropriately
+        arrow_length = 0.3
         arrow = plt.Arrow(current_state[0], current_state[1],
-                        arrow_length * np.cos(current_state[2]), arrow_length * np.sin(current_state[2]),
-                        width=0.1, color='yellow')
+                          arrow_length * np.cos(current_state[2]), arrow_length * np.sin(current_state[2]),
+                          width=0.1, color='yellow')
         self.ax.add_patch(arrow)
+
+        # Plotting the mode probabilities as a bar chart
+        if mode_prob is not None:
+            modes = range(len(mode_prob))
+            self.ax_prob.bar(modes, mode_prob, color='green', alpha=0.6)
+            self.ax_prob.set_ylim(0, 1)  # Assuming probabilities are between 0 and 1
+            self.ax_prob.set_ylabel('Mode Probabilities')
 
         plt.draw()
         plt.pause(0.1)

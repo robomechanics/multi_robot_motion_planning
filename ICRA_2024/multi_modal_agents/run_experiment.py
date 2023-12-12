@@ -43,16 +43,24 @@ if __name__ == "__main__":
     obstacle_density = 0.0
     # map = generate_map(map_size, 0)
 
-    scenario = "test_1_robot"
-    trial = 1
+    num_trials = 5
+    algs = ["MM-MPC", "Branch-MPC", "MPC"]
 
-    uncontrolled_agent = UncontrolledAgent(dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'])
-    predictions, uncontrolled_traj, mode_probabilities = uncontrolled_agent.simulate_diff_drive()
-
-    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
-    # mpc = Branch_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
-    # mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
-    
-    mpc.simulate()
+    for trial in range(num_trials):
+        uncontrolled_agent = UncontrolledAgent(dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'])
+        predictions, uncontrolled_traj, mode_probabilities = uncontrolled_agent.simulate_diff_drive()
+        
+        for alg in algs:
+            scenario = alg + str(trial)
+            if alg == "MM-MPC":
+                mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+                mpc.simulate()
+            if alg == "Branch-MPC":
+                mpc = Branch_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+                mpc.simulate()
+            else:
+                mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+                mpc.simulate()
+            
 
 

@@ -135,22 +135,29 @@ class MPC(MPC_Base):
         opti.set_initial(opt_controls, self.prev_controls[agent_id])  # (N, 2)
         opti.set_initial(opt_states, self.prev_states[agent_id])  # (N+1, 3)
         opti.set_initial(opt_epsilon_o, self.prev_epsilon_o[agent_id])
-                    
-        # solve the optimization problem
-        t_ = time.time()
-        sol = opti.solve()
-        solve_time = time.time() - t_
-        print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
 
-        # obtain the control input
-        u_res = sol.value(opt_controls)
-        next_states_pred = sol.value(opt_states)
-        eps_o = sol.value(opt_epsilon_o)
+        u_res = None
+        next_states_pred = None
 
-        self.prev_states[agent_id] = next_states_pred
-        self.prev_controls[agent_id] = u_res
-        self.prev_epsilon_o[agent_id] = eps_o 
-  
+        try:       
+            # solve the optimization problem
+            t_ = time.time()
+            sol = opti.solve()
+            solve_time = time.time() - t_
+            print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
+
+            # obtain the control input
+            u_res = sol.value(opt_controls)
+            next_states_pred = sol.value(opt_states)
+            eps_o = sol.value(opt_epsilon_o)
+
+            self.prev_states[agent_id] = next_states_pred
+            self.prev_controls[agent_id] = u_res
+            self.prev_epsilon_o[agent_id] = eps_o 
+
+        except RuntimeError as e:
+            print("Infeasible solve")
+    
         return u_res, next_states_pred
     
     def simulate(self):
@@ -177,18 +184,22 @@ class MPC(MPC_Base):
             current_uncontrolled_state = self.uncontrolled_traj[self.num_timestep]
             gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
 
-            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0])
+            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0])
             
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
                 u, next_states_pred = result
-                current_state = np.array(self.current_state[agent_id])
-                next_state, u0, next_states = self.shift_movement(current_state, u, next_states_pred, self.f_np)
+                if u is None:
+                    self.infeasible = True
+                    break
+                else:
+                    current_state = np.array(self.current_state[agent_id])
+                    next_state, u0, next_states = self.shift_movement(current_state, u, next_states_pred, self.f_np)
 
-                self.prediction_cache[agent_id] = next_states_pred.T
-                self.control_cache[agent_id] = u
-                self.current_state[agent_id] = next_state
-                self.state_cache[agent_id].append(next_state)
+                    self.prediction_cache[agent_id] = next_states_pred.T
+                    self.control_cache[agent_id] = u
+                    self.current_state[agent_id] = next_state
+                    self.state_cache[agent_id].append(next_state)
 
             self.num_timestep += 1
             time_2 = time.time()
@@ -211,6 +222,6 @@ class MPC(MPC_Base):
         self.logger.save_metrics_data()
         
         # draw function
-        draw_result = Draw_MPC_point_stabilization_v1(
-            rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs)
+        # draw_result = Draw_MPC_point_stabilization_v1(
+        #     rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs)
         
