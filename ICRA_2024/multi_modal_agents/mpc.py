@@ -83,20 +83,42 @@ class MPC(MPC_Base):
         current_uncontrolled_state = self.uncontrolled_traj[self.num_timestep]
         gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
 
-        for agent_prediction in gmm_predictions:
-            for mode, prediction in agent_prediction.items():
-                means = prediction['means']
-                covariances = prediction['covariances']
-                
-                for timestep, (mean, covariance) in enumerate(zip(means, covariances)):
-                    pi = opt_states[timestep,:]
-                    pj = np.array(mean[:2])
+        for k, agent_prediction in enumerate(gmm_predictions):
+            for j, prediction in agent_prediction.items():
+                for t in range(1,self.N):
+                    if self.linearized_ca:
+                        tv_pos = ca.DM(prediction['means'][t-1][:2])
+                        if type(self.prev_states[agent_id])==type([]):
+                            ref_pos = self.prev_states[agent_id][j][t,:2].T
+                        else:
+                            ref_pos = ca.DM(current_state)[:2]
+                        
+                        rob_proj = tv_pos+2*self.rob_dia*(ref_pos-tv_pos)/ca.norm_2(ref_pos-tv_pos)
+                        nom_dist = (rob_proj-tv_pos).T@(opt_states[t,:2].T-rob_proj)
 
-                    rob_rob_constraint = ca.sqrt((pi[0]-pj[0])**2 + (pi[1]-pj[1])**2) - 2* self.rob_dia + opt_epsilon_r[timestep]
-                    # aij = (pi[:,:2]-pj) / ca.norm_2(pi[:,:2]-pj)
-                    # bij = self.rob_dia*2
-                    # rob_rob_constraint = aij@(pi[:,:2]-pj).T - bij
-                    opti.subject_to(rob_rob_constraint >= 0)
+                        opti.subject_to(nom_dist>=-opt_epsilon_r[t-1])
+
+                    else:
+                        tv_pos = ca.DM(prediction['means'][t-1][:2])
+                        rob_pos = ca.vec(opt_states[t,:])
+
+                        rob_rob_constraint = ca.sqrt((rob_pos[0]-tv_pos[0])**2 + (rob_pos[1]-tv_pos[1])**2) - 2* self.rob_dia + opt_epsilon_r[t]
+                        opti.subject_to(rob_rob_constraint >= 0)
+
+        # for agent_prediction in gmm_predictions:
+        #     for mode, prediction in agent_prediction.items():
+        #         means = prediction['means']
+        #         covariances = prediction['covariances']
+                
+        #         for timestep, (mean, covariance) in enumerate(zip(means, covariances)):
+        #             pi = opt_states[timestep,:]
+        #             pj = np.array(mean[:2])
+
+        #             rob_rob_constraint = ca.sqrt((pi[0]-pj[0])**2 + (pi[1]-pj[1])**2) - 2* self.rob_dia + opt_epsilon_r[timestep]
+        #             # aij = (pi[:,:2]-pj) / ca.norm_2(pi[:,:2]-pj)
+        #             # bij = self.rob_dia*2
+        #             # rob_rob_constraint = aij@(pi[:,:2]-pj).T - bij
+        #             opti.subject_to(rob_rob_constraint >= 0)
 
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
                             'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
@@ -113,22 +135,29 @@ class MPC(MPC_Base):
         opti.set_initial(opt_controls, self.prev_controls[agent_id])  # (N, 2)
         opti.set_initial(opt_states, self.prev_states[agent_id])  # (N+1, 3)
         opti.set_initial(opt_epsilon_o, self.prev_epsilon_o[agent_id])
-                    
-        # solve the optimization problem
-        t_ = time.time()
-        sol = opti.solve()
-        solve_time = time.time() - t_
-        print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
 
-        # obtain the control input
-        u_res = sol.value(opt_controls)
-        next_states_pred = sol.value(opt_states)
-        eps_o = sol.value(opt_epsilon_o)
+        u_res = None
+        next_states_pred = None
 
-        self.prev_states[agent_id] = next_states_pred
-        self.prev_controls[agent_id] = u_res
-        self.prev_epsilon_o[agent_id] = eps_o 
-  
+        try:       
+            # solve the optimization problem
+            t_ = time.time()
+            sol = opti.solve()
+            solve_time = time.time() - t_
+            print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
+
+            # obtain the control input
+            u_res = sol.value(opt_controls)
+            next_states_pred = sol.value(opt_states)
+            eps_o = sol.value(opt_epsilon_o)
+
+            self.prev_states[agent_id] = next_states_pred
+            self.prev_controls[agent_id] = u_res
+            self.prev_epsilon_o[agent_id] = eps_o 
+
+        except RuntimeError as e:
+            print("Infeasible solve")
+    
         return u_res, next_states_pred
     
     def simulate(self):
@@ -155,18 +184,22 @@ class MPC(MPC_Base):
             current_uncontrolled_state = self.uncontrolled_traj[self.num_timestep]
             gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
 
-            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0])
+            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0])
             
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
                 u, next_states_pred = result
-                current_state = np.array(self.current_state[agent_id])
-                next_state, u0, next_states = self.shift_movement(current_state, u, next_states_pred, self.f_np)
+                if u is None:
+                    self.infeasible = True
+                    break
+                else:
+                    current_state = np.array(self.current_state[agent_id])
+                    next_state, u0, next_states = self.shift_movement(current_state, u, next_states_pred, self.f_np)
 
-                self.prediction_cache[agent_id] = next_states_pred.T
-                self.control_cache[agent_id] = u
-                self.current_state[agent_id] = next_state
-                self.state_cache[agent_id].append(next_state)
+                    self.prediction_cache[agent_id] = next_states_pred.T
+                    self.control_cache[agent_id] = u
+                    self.current_state[agent_id] = next_state
+                    self.state_cache[agent_id].append(next_state)
 
             self.num_timestep += 1
             time_2 = time.time()
@@ -189,6 +222,6 @@ class MPC(MPC_Base):
         self.logger.save_metrics_data()
         
         # draw function
-        draw_result = Draw_MPC_point_stabilization_v1(
-            rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs)
+        # draw_result = Draw_MPC_point_stabilization_v1(
+        #     rob_dia=self.rob_dia, init_state=self.initial_state, target_state=self.final_state, robot_states=self.state_cache, obs_state=self.obs)
         
