@@ -4,20 +4,20 @@ from matplotlib.animation import FuncAnimation
 from visualizer import Visualizer
 
 class UncontrolledAgent:
-    def __init__(self, dt=0.2, T=10, H=10, min_action_duration=1, num_switches=2):
+    def __init__(self, dt=0.2, T=20, H=10, min_action_duration=1, num_switches=2, action_variance=None):
         self.dt = dt
         self.T = T 
         self.H = H
         self.min_action_duration = min_action_duration
         self.init_state_variance = [0.01, 0.01, 0.01]
-        self.v_variance = 0.1
         self.num_switches = num_switches
-        self.omega_variance = [0.1, 0.1, 0.1]  # Variances for omega corresponding to each action
+        self.omega_variance = 0.2 if action_variance is None else action_variance   # Variances for omega corresponding to each action
+        self.v_variance = 0.2 if action_variance is None else action_variance
         self.action_prob = [0.2, 0.6, 0.2]
         self.actions = [
-        (np.random.normal(0.5, self.v_variance), np.random.normal(0.4, self.omega_variance[0])), 
-        (np.random.normal(0.5, self.v_variance), np.random.normal(0.0, self.omega_variance[1])), 
-        (np.random.normal(0.5, self.v_variance), np.random.normal(-0.4, self.omega_variance[1]))]
+        (np.random.normal(0.5, self.v_variance), np.random.normal(0.4, self.omega_variance)), 
+        (np.random.normal(0.5, self.v_variance), np.random.normal(0.0, self.omega_variance)), 
+        (np.random.normal(0.5, self.v_variance), np.random.normal(-0.4, self.omega_variance))]
         self.noise_range = [-0.02, 0.02]
         self.prior_likelihood = [0.4, 0.2, 0.4]
         self.alpha = 0.2
@@ -121,7 +121,7 @@ class UncontrolledAgent:
             # Populate the means and covariances for each timestep within the prediction horizon
             for _ in np.arange(0, self.H, self.dt):
                 means.append([v, omega])  # The mean of v and omega is the action's value
-                covariance = np.diag([self.v_variance**2, self.omega_variance[mode]**2])  # Diagonal covariance matrix
+                covariance = np.diag([self.v_variance**2, self.omega_variance**2])  # Diagonal covariance matrix
                 covariances.append(covariance)
     
             # Assign the mean and covariance vectors to the corresponding mode
@@ -152,7 +152,7 @@ class UncontrolledAgent:
             covariances = []
 
             # Process noise matrix, assuming it's constant over time
-            Q = np.diag([self.v_variance**2, self.v_variance**2, self.omega_variance[mode]**2])
+            Q = np.diag([self.v_variance**2, self.v_variance**2, self.omega_variance**2])
 
             # Populate the means and covariances for each timestep within the prediction horizon
             for step in np.arange(0, self.H, self.dt):
