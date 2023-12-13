@@ -6,9 +6,11 @@ import os
 import pickle 
 import matplotlib.pyplot as plt
 from PIL import Image
+import pandas as pd
 from draw import Draw_MPC_point_stabilization_v1
 from collections import OrderedDict
 import seaborn as sns
+from collections import defaultdict
 
 sns.set_palette("Set1")
 
@@ -329,3 +331,34 @@ def get_obstacle_coordinates(occupancy_grid, current_position):
                     obstacle_centers.append((center_x, center_y))
     
     return obstacle_centers
+
+def plot_success_rate(df):
+    # Check if 'df' is a DataFrame and if 'algorithm' and 'noise_level' columns exist
+    if not isinstance(df, pd.DataFrame):
+        raise ValueError("The input is not a valid pandas DataFrame.")
+    if 'algorithm' not in df.columns or 'noise_level' not in df.columns or 'success' not in df.columns:
+        raise ValueError("DataFrame must contain 'algorithm', 'noise_level', and 'success' columns.")
+
+    # Sort algorithms with MM-MPC first
+    algorithms = sorted(df['algorithm'].unique(), key=lambda x: (x != 'MM-MPC', x))
+    noise_levels = sorted(df['noise_level'].unique())
+    bar_width = 0.2
+    opacity = 0.8
+
+    plt.figure(figsize=(12, 6))
+
+    for i, algorithm in enumerate(algorithms):
+        success_rates = df[df['algorithm'] == algorithm].groupby('noise_level')['success'].mean().reindex(noise_levels)
+        bar_positions = [x + (i - len(noise_levels) / 2) * bar_width for x in noise_levels]
+        plt.bar(bar_positions, success_rates, bar_width, alpha=opacity, label=algorithm)
+
+    plt.xlabel('Noise Level')
+    plt.ylabel('Success Rate')
+    plt.title('Average Success Rate by Noise Level and Algorithm')
+    plt.xticks(range(len(noise_levels)), noise_levels)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+def visualize_simulation_results(df):
+    plot_success_rate(df)

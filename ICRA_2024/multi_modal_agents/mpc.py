@@ -85,6 +85,7 @@ class MPC(MPC_Base):
 
         for k, agent_prediction in enumerate(gmm_predictions):
             for j, prediction in agent_prediction.items():
+                covariances = prediction['covariances']
                 for t in range(1,self.N):
                     if self.linearized_ca:
                         tv_pos = ca.DM(prediction['means'][t-1][:2])
@@ -96,6 +97,9 @@ class MPC(MPC_Base):
                         rob_proj = tv_pos+2*self.rob_dia*(ref_pos-tv_pos)/ca.norm_2(ref_pos-tv_pos)
                         nom_dist = (rob_proj-tv_pos).T@(opt_states[t,:2].T-rob_proj)
 
+                        rv_dist  = sp.erfinv(1-2*self.delta)*(rob_proj-tv_pos).T@covariances[t][:2,:2]*2
+
+                        opti.subject_to(rv_dist@rv_dist.T<=(opt_epsilon_r[t-1]+nom_dist)**2)
                         opti.subject_to(nom_dist>=-opt_epsilon_r[t-1])
 
                     else:
@@ -165,10 +169,10 @@ class MPC(MPC_Base):
         self.prediction_cache = {agent_id: np.empty((3, self.N+1)) for agent_id in range(self.num_agent)}
         self.control_cache = {agent_id: np.empty((2, self.N)) for agent_id in range(self.num_agent)}
         
-        self.setup_visualization()
+        # self.setup_visualization()
 
         # parallelized implementation
-        while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
+        while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep and not self.infeasible):
             time_1 = time.time()
             print(self.num_timestep)
 
@@ -215,7 +219,7 @@ class MPC(MPC_Base):
         else:
             self.success = False
         
-        run_description = "MPC_" + self.scenario 
+        run_description = self.scenario 
 
         self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached)
         self.logger.print_metrics_summary()

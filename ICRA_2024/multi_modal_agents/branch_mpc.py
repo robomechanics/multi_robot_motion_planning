@@ -188,10 +188,10 @@ class Branch_MPC(MPC_Base):
         self.prediction_cache = {agent_id: np.empty((3, self.N+1, self.num_modes)) for agent_id in range(self.num_agent)}
         self.control_cache = {agent_id: np.empty((2, self.N, self.num_modes)) for agent_id in range(self.num_agent)}
         
-        self.setup_visualization()
+        # self.setup_visualization()
 
         # parallelized implementation
-        while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
+        while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep and not self.infeasible):
             time_1 = time.time()
             print(self.num_timestep)
 

@@ -80,7 +80,7 @@ class MetricsLogger:
                     print(max_time_reached)
                     print("===================")
 
-    def save_metrics_data(self, base_folder="results"):
+    def save_metrics_data(self, base_folder="mm_results"):
         # Create the base folder if it doesn't exist
         if not os.path.exists(base_folder):
             os.makedirs(base_folder)
