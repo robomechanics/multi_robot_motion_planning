@@ -41,8 +41,8 @@ class Branch_MPC(MPC_Base):
                 ### Needs to fix this
                 x_next = opt_states[m][n,:] + self.f(opt_states[m][n,:], opt_controls[m][n,:]).T * self.dt
                 opti.subject_to(opt_states[m][n+1,:] == x_next)
-                opti.subject_to(opti.bounded(0, opt_epsilon_o[m][n,:], ca.inf))
-                opti.subject_to(opti.bounded(0, opt_epsilon_r[m][n,:], ca.inf))
+                opti.subject_to(opti.bounded(0, opt_epsilon_o[m][n,:], 0.001))
+                opti.subject_to(opti.bounded(0, opt_epsilon_r[m][n,:], 0.001))
 
         for n in range(self.robust_horizon):
             for i in range(self.num_modes):
@@ -72,14 +72,14 @@ class Branch_MPC(MPC_Base):
             # else: 
                 mode_weight = mode_prob[m]
                 robot_cost = robot_cost + mode_weight * (ca.mtimes([(opt_states[m][k, :]-opt_xs.T), Q, (opt_states[m][k, :]-opt_xs.T).T]
-                                            ) + ca.mtimes([opt_controls[m][k, :], R, opt_controls[m][k, :].T])) +  100000000000 * opt_epsilon_r[m][k]
+                                            ) + ca.mtimes([opt_controls[m][k, :], R, opt_controls[m][k, :].T])) +  100000 * opt_epsilon_r[m][k]
             
         total_cost = robot_cost + collision_cost
         opti.minimize(total_cost)
  
         # boundrary and control conditions
         opti.subject_to(opti.bounded(-10.0, opt_x, 10.0))
-        opti.subject_to(opti.bounded(-10.0, opt_y, 10.0))
+        opti.subject_to(opti.bounded(-2.0, opt_y, 2.0))
         opti.subject_to(opti.bounded(-self.v_lim, v, self.v_lim))
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
@@ -191,7 +191,7 @@ class Branch_MPC(MPC_Base):
         # self.setup_visualization()
 
         # parallelized implementation
-        while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep and not self.infeasible):
+        while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
             print(self.num_timestep)
 
@@ -214,6 +214,7 @@ class Branch_MPC(MPC_Base):
             for agent_id, result in enumerate(results):
                 u, next_states_pred = result
                 if u is None:
+                    self.infeasible_count += 1
                     self.infeasible = True
                     break
                 else:
@@ -241,7 +242,7 @@ class Branch_MPC(MPC_Base):
         
         run_description = self.scenario 
 
-        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached)
+        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached, self.infeasible_count)
         self.logger.print_metrics_summary()
         self.logger.save_metrics_data()
         

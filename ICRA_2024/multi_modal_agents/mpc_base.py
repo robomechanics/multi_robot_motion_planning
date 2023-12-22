@@ -8,7 +8,7 @@ from matplotlib.patches import Circle, Arrow
 from matplotlib.animation import FuncAnimation
 
 class MPC_Base:
-    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=None, ref=None, mode_prob=None):
+    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=None, ref=None, mode_prob=None, feedback=None):
         self.num_agent = mpc_params['num_agents']
         self.dt = mpc_params['dt']
         self.N = mpc_params['N']
@@ -32,6 +32,7 @@ class MPC_Base:
         self.delta = 0.03
         self.num_modes = 3
         self.robust_horizon = 1
+        self.feedback = feedback
 
         self.model = DiffDrive(self.rob_dia)
 
@@ -57,6 +58,7 @@ class MPC_Base:
         self.map = map
 
         self.num_timestep = 0
+        self.infeasible_count = 0
 
         # check for failures after simulation is done
         self.max_time_reached = False
@@ -151,9 +153,7 @@ class MPC_Base:
         return False
 
     def is_solution_valid(self, state_cache):
-        if self.infeasible:
-            return False
-        elif self.check_for_collisions(state_cache):
+        if self.check_for_collisions(state_cache):
             print("Executed trajectory has collisions")
             self.execution_collision = True
             return False

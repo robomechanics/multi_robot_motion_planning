@@ -32,8 +32,8 @@ class MPC(MPC_Base):
         for j in range(self.N):
             x_next = opt_states[j, :] + self.f(opt_states[j, :], opt_controls[j, :]).T*self.dt
             opti.subject_to(opt_states[j+1, :] == x_next)
-            opti.subject_to(opti.bounded(0, opt_epsilon_o[j], ca.inf))
-            opti.subject_to(opti.bounded(0, opt_epsilon_r[j], ca.inf))
+            opti.subject_to(opti.bounded(0, opt_epsilon_o[j], 0.001))
+            opti.subject_to(opti.bounded(0, opt_epsilon_r[j], 0.001))
 
         # define the cost function
         robot_cost = 0  # cost
@@ -63,7 +63,7 @@ class MPC(MPC_Base):
 
         # boundrary and control conditions
         opti.subject_to(opti.bounded(-10.0, opt_x, 10.0))
-        opti.subject_to(opti.bounded(-10.0, opt_y, 10.0))
+        opti.subject_to(opti.bounded(-2.0, opt_y, 2.0))
         opti.subject_to(opti.bounded(-self.v_lim, v, self.v_lim))
         opti.subject_to(opti.bounded(-self.omega_lim, omega, self.omega_lim))        
 
@@ -169,10 +169,10 @@ class MPC(MPC_Base):
         self.prediction_cache = {agent_id: np.empty((3, self.N+1)) for agent_id in range(self.num_agent)}
         self.control_cache = {agent_id: np.empty((2, self.N)) for agent_id in range(self.num_agent)}
         
-        # self.setup_visualization()
+        self.setup_visualization()
 
         # parallelized implementation
-        while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep and not self.infeasible):
+        while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
             print(self.num_timestep)
 
@@ -188,12 +188,13 @@ class MPC(MPC_Base):
             current_uncontrolled_state = self.uncontrolled_traj[self.num_timestep]
             gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
 
-            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0])
+            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0])
             
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
                 u, next_states_pred = result
                 if u is None:
+                    self.infeasible_count += 1
                     self.infeasible = True
                     break
                 else:
@@ -221,7 +222,7 @@ class MPC(MPC_Base):
         
         run_description = self.scenario 
 
-        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached)
+        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached, self.infeasible_count)
         self.logger.print_metrics_summary()
         self.logger.save_metrics_data()
         
