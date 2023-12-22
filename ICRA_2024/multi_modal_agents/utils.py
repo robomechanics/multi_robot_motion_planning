@@ -332,33 +332,66 @@ def get_obstacle_coordinates(occupancy_grid, current_position):
     
     return obstacle_centers
 
-def plot_success_rate(df):
-    # Check if 'df' is a DataFrame and if 'algorithm' and 'noise_level' columns exist
-    if not isinstance(df, pd.DataFrame):
-        raise ValueError("The input is not a valid pandas DataFrame.")
-    if 'algorithm' not in df.columns or 'noise_level' not in df.columns or 'success' not in df.columns:
-        raise ValueError("DataFrame must contain 'algorithm', 'noise_level', and 'success' columns.")
+def calculate_success_rate(folder_path):
+    results = {}  # Dictionary to store the success rates
 
-    # Sort algorithms with MM-MPC first
-    algorithms = sorted(df['algorithm'].unique(), key=lambda x: (x != 'MM-MPC', x))
-    noise_levels = sorted(df['noise_level'].unique())
-    bar_width = 0.2
-    opacity = 0.8
+    # Iterate through each subfolder
+    for subfolder in os.listdir(folder_path):
+        if os.path.isdir(os.path.join(folder_path, subfolder)):
+            # Extract algorithm and noise level from the subfolder name
+            parts = subfolder.split('_')
+            algorithm = parts[0] 
+            noise_level = float(parts[-1])
 
-    plt.figure(figsize=(12, 6))
+            # Initialize success count and total trials
+            makespan = 0
+            total_trials = 0
 
-    for i, algorithm in enumerate(algorithms):
-        success_rates = df[df['algorithm'] == algorithm].groupby('noise_level')['success'].mean().reindex(noise_levels)
-        bar_positions = [x + (i - len(noise_levels) / 2) * bar_width for x in noise_levels]
-        plt.bar(bar_positions, success_rates, bar_width, alpha=opacity, label=algorithm)
+            # Load each .pkl file and update success count
+            for file in os.listdir(os.path.join(folder_path, subfolder)):
+                if file.endswith('.pkl'):
+                    with open(os.path.join(folder_path, subfolder, file), 'rb') as f:
+                        data = pickle.load(f)
+                        makespan += data['infeasible_count']
+                        total_trials += 1
 
-    plt.xlabel('Noise Level')
-    plt.ylabel('Success Rate')
-    plt.title('Average Success Rate by Noise Level and Algorithm')
-    plt.xticks(range(len(noise_levels)), noise_levels)
-    plt.legend()
-    plt.tight_layout()
+            # Calculate success rate
+            makespan_avg = 100 - (makespan / total_trials)
+
+            # Store the success rate in the results dictionary
+            if noise_level not in results:
+                results[noise_level] = {}
+            results[noise_level][algorithm] = makespan_avg
+
+    return results
+
+def plot_success_rates(results):
+    # Sort the noise levels
+    noise_levels = sorted(results.keys())
+
+    # Algorithms in order
+    algorithms = ["MM-MPC", "Robust-MPC", "Branch-MPC"]
+
+    # Prepare data for plotting
+    data_to_plot = {alg: [] for alg in algorithms}
+    for noise_level in noise_levels:
+        for alg in algorithms:
+            data_to_plot[alg].append(results[noise_level].get(alg, 0))
+
+    # Plotting
+    x = np.arange(len(noise_levels))  # the label locations
+    width = 0.2  # the width of the bars
+
+    fig, ax = plt.subplots()
+    for i, alg in enumerate(algorithms):
+        ax.bar(x + i*width, data_to_plot[alg], width, label=alg)
+
+    # Add some text for labels, title, and custom x-axis tick labels, etc.
+    ax.set_xlabel('Prediction uncertainty level')
+    ax.set_ylabel('% Feasibility')
+    ax.set_title('% Feasibility')
+    ax.set_xticks(x + width)
+    ax.set_xticklabels(noise_levels)
+    ax.legend()
+
     plt.show()
-
-def visualize_simulation_results(df):
-    plot_success_rate(df)

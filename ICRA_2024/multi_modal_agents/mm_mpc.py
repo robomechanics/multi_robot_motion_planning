@@ -154,7 +154,7 @@ class MM_MPC(MPC_Base):
             v.append(opt_controls[j][:,0])
             omega.append(opt_controls[j][:,1])
 
-            opti.subject_to(opti.bounded(0, opt_epsilon_r[j], 0.001))
+            opti.subject_to(opti.bounded(0, opt_epsilon_r[j][:], 0.001))
 
         # opt_epsilon_o = opti.variable(self.N+1, 1)
         
@@ -197,7 +197,7 @@ class MM_MPC(MPC_Base):
             
             # boundrary and control conditions
             opti.subject_to(opti.bounded(-10.0, opt_x[j], 10.0))
-            opti.subject_to(opti.bounded(-10.0, opt_y[j], 10.0))
+            opti.subject_to(opti.bounded(-2, opt_y[j], 2))
             opti.subject_to(opti.bounded(-self.v_lim, v[j], self.v_lim))
             opti.subject_to(opti.bounded(-self.omega_lim, omega[j], self.omega_lim))
             # static obstacle constraint
@@ -210,7 +210,10 @@ class MM_MPC(MPC_Base):
         pol_gains = []
         T_obs, c_obs, E_obs=[], [], []
 
-        K_rob_horizon = [opti.variable(2,2) for t in range(self.robust_horizon-1)]
+        if self.feedback:
+            K_rob_horizon = [opti.variable(2,2) for t in range(self.robust_horizon-1)]
+        else:
+            K_rob_horizon = [ca.DM(2,2) for t in range(self.robust_horizon-1)]
 
         for agent_prediction, agent_noise in zip(gmm_predictions, noise_chars):
             T_obs_k, c_obs_k, E_obs_k=[], [], []
@@ -223,7 +226,11 @@ class MM_MPC(MPC_Base):
                 mean_inputs  = agent_noise[mode]['means']
                 covar_inputs = agent_noise[mode]['covariances']
 
-                K = K_rob_horizon+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
+                if self.feedback:
+                    K = K_rob_horizon+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
+                else:
+                    K = K_rob_horizon+[ca.DM(2,2) for t in range(self.N-self.robust_horizon)]
+                
                 K_stack=ca.diagcat(ca.DM(2,2),*[K[t] for t in range(self.N-1)]) 
 
                 obs_xy_cov = ca.diagcat(*[ covariances[i][:2,:2] for i in range(self.N)])
@@ -357,7 +364,7 @@ class MM_MPC(MPC_Base):
         # self.setup_visualization()
         
         # parallelized implementation
-        while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep and not self.infeasible):
+        while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
             print(self.num_timestep)
     
@@ -381,6 +388,7 @@ class MM_MPC(MPC_Base):
             for agent_id, result in enumerate(results):
                 u, next_states_pred = result
                 if u is None:
+                    self.infeasible_count += 1
                     self.infeasible = True
                     break
                 else:
@@ -409,7 +417,7 @@ class MM_MPC(MPC_Base):
         
         run_description = self.scenario 
 
-        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached)
+        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached, self.infeasible_count)
         self.logger.print_metrics_summary()
         self.logger.save_metrics_data()
         

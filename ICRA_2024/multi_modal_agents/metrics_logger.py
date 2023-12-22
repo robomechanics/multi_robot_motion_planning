@@ -7,7 +7,7 @@ class MetricsLogger:
     def __init__(self):
         self.metrics_data = {}
 
-    def log_metrics(self, run_description, trial_num, state_cache, map, initial_state, final_state, avg_comp_time, max_comp_time, traj_length, makespan, avg_rob_dist, c_avg, success, execution_collision, max_time_reached):
+    def log_metrics(self, run_description, trial_num, state_cache, map, initial_state, final_state, avg_comp_time, max_comp_time, traj_length, makespan, avg_rob_dist, c_avg, success, execution_collision, max_time_reached, infeasible_count):
         # Log the metrics for a specific algorithm trial
         if run_description not in self.metrics_data:
             self.metrics_data[run_description] = {}
@@ -25,7 +25,8 @@ class MetricsLogger:
                 "avg_rob_dist": [],
                 "success": [],
                 "execution_collision": [],
-                "max_time_reached": []
+                "max_time_reached": [],
+                "infeasible_count": []
             }
         self.metrics_data[run_description][trial_num]["state_cache"] = state_cache
         self.metrics_data[run_description][trial_num]["initial_state"] = initial_state
@@ -40,6 +41,7 @@ class MetricsLogger:
         self.metrics_data[run_description][trial_num]["c_avg"] = c_avg
         self.metrics_data[run_description][trial_num]["execution_collision"] = execution_collision
         self.metrics_data[run_description][trial_num]["max_time_reached"] = max_time_reached
+        self.metrics_data[run_description][trial_num]["infeasible_count"] = infeasible_count
 
     def print_metrics_summary(self):
         # Returns the collected metrics data
@@ -54,6 +56,7 @@ class MetricsLogger:
                 c_avg = metrics["c_avg"]
                 execution_collision = metrics["execution_collision"]
                 max_time_reached = metrics["max_time_reached"]
+                infeasible_count = metrics["infeasible_count"]
 
                 if(success):
                     print("Avg Comp Time:")
