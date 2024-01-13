@@ -54,7 +54,11 @@ def get_traj_length(state_cache):
             dx = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
             traj_len += dx
 
-    return traj_len
+    return 
+
+def get_best_node(conflict_tree):
+    lowest_cost_node = min(conflict_tree, key=lambda node: node.cost)
+    return lowest_cost_node
 
 def generate_map(map_size, num_obstacles):
     num_cells = map_size[0] * map_size[1]    

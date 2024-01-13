@@ -33,7 +33,7 @@ class MPC(MPC_Base):
             x_next = opt_states[j, :] + self.f(opt_states[j, :], opt_controls[j, :]).T*self.dt
             opti.subject_to(opt_states[j+1, :] == x_next)
             opti.subject_to(opti.bounded(0, opt_epsilon_o[j], ca.inf))
-            opti.subject_to(opti.bounded(0, opt_epsilon_r[j], ca.inf))
+            opti.subject_to(opti.bounded(0, opt_epsilon_r[j], 0.001))
 
         # define the cost function
         robot_cost = 0  # cost
