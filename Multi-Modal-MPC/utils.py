@@ -352,17 +352,12 @@ def calculate_success_rate(folder_path):
                 if file.endswith('.pkl'):
                     with open(os.path.join(folder_path, subfolder, file), 'rb') as f:
                         data = pickle.load(f)
-                        num_timesteps = data['num_timesteps']
+                        num_timesteps += data['num_timesteps']
                         infeasible_count += data['infeasible_count']
 
-                        print(subfolder)
-                        print(infeasible_count)
-                        print(num_timesteps)
-                        print("-----")
-
             # Calculate success rate
-            infeasible_ratio = infeasible_count / (num_timesteps)
-
+            infeasible_ratio = infeasible_count/num_timesteps
+   
             # Store the success rate in the results dictionary
             if noise_level not in results:
                 results[noise_level] = {}
@@ -371,11 +366,12 @@ def calculate_success_rate(folder_path):
     return results
 
 def plot_success_rates(results):
+    print(results)
     # Sort the noise levels
     noise_levels = sorted(results.keys())
 
     # Algorithms in order
-    algorithms = ["MM-MPC", "MPC"]
+    algorithms = ["MM-MPC", "MPC", "Branch-MPC"]
 
     # Prepare data for plotting
     data_to_plot = {alg: [] for alg in algorithms}
@@ -393,8 +389,8 @@ def plot_success_rates(results):
 
     # Add some text for labels, title, and custom x-axis tick labels, etc.
     ax.set_xlabel('Prediction uncertainty level')
-    ax.set_ylabel('% Feasibility')
-    ax.set_title('% Feasibility')
+    ax.set_ylabel('Number of Infeasible Solves')
+    ax.set_title('Number of Infeasible Solves')
     ax.set_xticks(x + width)
     ax.set_xticklabels(noise_levels)
     ax.legend()

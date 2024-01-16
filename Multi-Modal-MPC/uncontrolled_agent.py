@@ -13,11 +13,11 @@ class UncontrolledAgent:
         self.num_switches = num_switches
         self.omega_variance = 0.2 if action_variance is None else action_variance   # Variances for omega corresponding to each action
         self.v_variance = 0.2 if action_variance is None else action_variance
-        self.action_prob = [0.25, 0.5, 0.25]
+        self.action_prob = [0.2, 0.6, 0.2]
         self.actions = [
-        (np.random.normal(0.3, 0.1), np.random.normal(0.1, 0.05)), 
-        (np.random.normal(0.5, 0.1), np.random.normal(0.0, 0.05)), 
-        (np.random.normal(0.3, 0.1), np.random.normal(-0.1, 0.05))]
+        (np.random.normal(0.2, 0.05), np.random.normal(0.2, 0.02)), 
+        (np.random.normal(0.3, 0.05), np.random.normal(0.0, 0.01)), 
+        (np.random.normal(0.2, 0.05), np.random.normal(-0.2, 0.02))]
         self.noise_range = [-0.02, 0.02]
         self.prior_likelihood = [0.4, 0.2, 0.4]
         self.alpha = 0.2
