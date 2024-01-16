@@ -31,7 +31,7 @@ class MPC_Base:
         self.mode_prob = mode_prob
         self.delta = 0.03
         self.num_modes = 3
-        self.robust_horizon = 1
+        self.robust_horizon = 2
         self.feedback = feedback
 
         self.model = DiffDrive(self.rob_dia)
@@ -78,13 +78,11 @@ class MPC_Base:
 
         self.logger = MetricsLogger()
     
-    def shift_movement(self, x0, u, x_n, f):
+    def shift_movement(self, x0, u, f):
         f_value = f(x0, u[0])
         st = x0 + self.dt*f_value
-        u_end = np.concatenate((u[1:], u[-1:]))
-        x_n = np.concatenate((x_n[1:], x_n[-1:]))
 
-        return st, u_end, x_n
+        return st
 
     def prediction_state(self, x0, u, dt, N):
         # define prediction horizon function

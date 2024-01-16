@@ -196,10 +196,19 @@ class MPC(MPC_Base):
                 if u is None:
                     self.infeasible_count += 1
                     self.infeasible = True
-                    break
-                else:
+                    u = np.zeros((self.N, 2))
+
                     current_state = np.array(self.current_state[agent_id])
-                    next_state, u0, next_states = self.shift_movement(current_state, u, next_states_pred, self.f_np)
+                    next_state = self.shift_movement(current_state, u, self.f_np)
+
+                    # self.prediction_cache[agent_id] = next_states_pred.T
+                    self.control_cache[agent_id] = u
+                    self.current_state[agent_id] = next_state
+                    self.state_cache[agent_id].append(next_state)
+                else:
+                    self.num_timestep += 1
+                    current_state = np.array(self.current_state[agent_id])
+                    next_state = self.shift_movement(current_state, u, self.f_np)
 
                     self.prediction_cache[agent_id] = next_states_pred.T
                     self.control_cache[agent_id] = u

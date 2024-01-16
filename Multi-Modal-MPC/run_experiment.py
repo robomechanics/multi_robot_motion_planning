@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from uncontrolled_agent import UncontrolledAgent
 
 if __name__ == "__main__":
-    initial_states = [[4.0, 0.0, 0.0]]
+    initial_states = [[3.0, 0.0, 0.0]]
     final_states = [[0.0, 0.0, 0.0]]
 
     cost_func_params = {
@@ -25,7 +25,7 @@ if __name__ == "__main__":
         'rob_dia': 0.3,
         'v_lim': 1.0,
         'omega_lim': 1.0,
-        'total_sim_timestep': 200,
+        'total_sim_timestep': 100,
         'obs_sim_timestep': 100,
         'epsilon_o': 0.05,
         'epsilon_r': 0.05,
@@ -44,14 +44,13 @@ if __name__ == "__main__":
     # map = generate_map(map_size, 0)
 
     num_trials = 3
-    algs = ["MM-MPC", "MPC", "Branch-MPC"]
-    noise_levels = [0.05, 0.4]
+    algs = ["MPC", "MM-MPC", "Branch-MPC"]
+    noise_levels = [0.1, 0.2, 0.3]
 
     # results = calculate_success_rate("mm_results")
     # plot_success_rates(results)
-
-    for trial in range(num_trials):
-        for noise_level in noise_levels:
+    for noise_level in noise_levels:
+        for trial in range(num_trials):
             uncontrolled_agent = UncontrolledAgent(dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=noise_level)
             predictions, uncontrolled_traj, mode_probabilities = uncontrolled_agent.simulate_diff_drive()
             
