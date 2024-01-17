@@ -30,7 +30,7 @@ class MPC_Base:
         self.uncontrolled_traj = uncontrolled_traj
         self.mode_prob = mode_prob
         self.delta = 0.03
-        self.num_modes = 3
+        self.num_modes = 2
         self.robust_horizon = 2
         self.feedback = feedback
 

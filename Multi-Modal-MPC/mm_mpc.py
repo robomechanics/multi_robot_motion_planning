@@ -361,7 +361,7 @@ class MM_MPC(MPC_Base):
         self.prediction_cache = {agent_id: np.empty((3, self.N+1, self.num_modes)) for agent_id in range(self.num_agent)}
         self.control_cache = {agent_id: np.empty((2, self.N, self.num_modes)) for agent_id in range(self.num_agent)}
 
-        # self.setup_visualization()
+        self.setup_visualization()
         
         # parallelized implementation
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
@@ -382,7 +382,7 @@ class MM_MPC(MPC_Base):
             gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
 
             mode_prob = self.mode_prob[self.num_timestep] 
-            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0], mode_prob)
+            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0], mode_prob)
     
             # Process the results and update the current state
             for agent_id, result in enumerate(results):

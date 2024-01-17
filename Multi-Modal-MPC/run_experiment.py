@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from uncontrolled_agent import UncontrolledAgent
 
 if __name__ == "__main__":
-    initial_states = [[3.0, 0.0, 0.0]]
+    initial_states = [[4.0, 0.0, 0.0]]
     final_states = [[0.0, 0.0, 0.0]]
 
     cost_func_params = {
@@ -44,8 +44,8 @@ if __name__ == "__main__":
     # map = generate_map(map_size, 0)
 
     num_trials = 3
-    algs = ["MPC", "MM-MPC", "Branch-MPC"]
-    noise_levels = [0.1, 0.2, 0.3]
+    algs = ["MM-MPC"]
+    noise_levels = [0.05, 0.1]
 
     # results = calculate_success_rate("mm_results")
     # plot_success_rates(results)
