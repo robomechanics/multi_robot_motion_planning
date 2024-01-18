@@ -3,6 +3,7 @@ import numpy as np
 from matplotlib.animation import FuncAnimation
 import matplotlib.patches as patches
 import time
+from itertools import cycle
 
 class Visualizer:
     def __init__(self, x_positions, y_value, gmm_predictions, road_width=1, interval=100):
@@ -42,13 +43,16 @@ class Visualizer:
             self.circles.clear()
 
             # Iterate through each mode in the prediction for the current frame
+            colors = ['green', 'blue']
+            color_cycle = cycle(colors) 
             for mode, mode_pred in self.gmm_predictions[frame].items():
+                circle_color = next(color_cycle)  # Get the next color from the cycle
                 means = mode_pred['means']
                 covariances = mode_pred['covariances']
 
                 # Plot circles for each mean with corresponding covariance as radius
                 for mean, covariance in zip(means, covariances):
-                    circle = patches.Circle((mean, self.y_value), radius=np.sqrt(covariance), fill=True, alpha=0.1)
+                    circle = patches.Circle(mean, radius=0.05, fill=True, alpha=0.05, color=circle_color)
                     ax.add_patch(circle)
                     self.circles.append(circle)
 
@@ -62,7 +66,7 @@ class Visualizer:
         plt.show()
 
 class PedestrianSimulator:
-    def __init__(self, initial_position, initial_velocity, rationality, sim_time, dt, N, y_pos):
+    def __init__(self, initial_position, initial_velocity, rationality, sim_time, dt, N, y_pos, vel_variance):
         self.position = initial_position
         self.velocity = initial_velocity
         self.dt = 0.1
@@ -71,7 +75,7 @@ class PedestrianSimulator:
         self.state_cache = []
         self.predictions = []
         self.actions = [self.velocity, -self.velocity]
-        self.init_state_variance = 0.01
+        self.vel_variance = vel_variance
         self.T = sim_time
         self.N = 20
         self.rationality = rationality
@@ -84,11 +88,13 @@ class PedestrianSimulator:
         self.y_pos = y_pos
 
     def step(self):
-        elapsed_time = (time.time() - self.start_time) * 10000 
+        elapsed_time = (time.time() - self.start_time) * 10000
         if(elapsed_time < self.switch_time):
-            self.position += self.initial_action * self.dt
+            uncertain_action = np.random.normal(self.initial_action, np.sqrt(self.vel_variance), 1)[0]
+            self.position += uncertain_action * self.dt
         else:
-            self.position += -self.initial_action * self.dt
+            uncertain_action = np.random.normal(-self.initial_action, np.sqrt(self.vel_variance), 1)[0]
+            self.position += uncertain_action * self.dt
         
         self.state_cache.append((self.position,self.y_pos)) 
 
@@ -113,7 +119,7 @@ class PedestrianSimulator:
             # Populate the means and covariances for each timestep within the prediction horizon
             for _ in np.arange(0, self.T, self.dt):
                 means.append(action)  # The mean of v and omega is the action's value
-                covariance = np.diag([self.init_state_variance**2, self.init_state_variance**2])  # Diagonal covariance matrix
+                covariance = np.diag([self.vel_variance**2, self.vel_variance**2])  # Diagonal covariance matrix
                 covariances.append(covariance)
     
             # Assign the mean and covariance vectors to the corresponding mode
@@ -134,21 +140,22 @@ class PedestrianSimulator:
         # Calculate the mean and covariance for each action at each timestep within the prediction horizon
         for mode, action in enumerate(self.actions):
             # Initialize the covariance matrix for the initial state
-            covariance = self.init_state_variance
+            covariance = self.vel_variance
 
             # Mean and covariance vectors for the entire prediction horizon
             means = []
             covariances = []
 
             # Process noise matrix, assuming it's constant over time
-            Q = self.init_state_variance
+            Q = self.vel_variance
 
             temp_state = current_state
 
             # Populate the means and covariances for each timestep within the prediction horizon
             for step in range(self.N):
                 # Propagate the state without additional noise
-                new_state = self.step_from_current(temp_state, action)
+                uncertain_action = np.random.normal(action, np.sqrt(self.vel_variance), 1)[0]
+                new_state = self.step_from_current(temp_state, uncertain_action)
                 means.append(new_state)  # Mean of the state after propagation
 
                 # Predict the new covariance matrix
@@ -179,15 +186,16 @@ class PedestrianSimulator:
         return self.predictions, self.state_cache
 
 # Simulation parameters
-# T = 6 
-# dt = 0.1
-# rationality = 0.1
-# N = 20
-# y_pos=3
+T = 6 
+dt = 0.1
+rationality = 0.8
+N = 20
+y_pos = 3
+vel_variance = 0.05
 
-# # Create an instance of the simulator
-# uncontrolled_agent = PedestrianSimulator(initial_position=0, initial_velocity=0.1, rationality=rationality, sim_time=T, dt=dt, N=N, y_pos=2)
-# predictions, state_cache = uncontrolled_agent.simulate_pedestrian()
+# Create an instance of the simulator
+uncontrolled_agent = PedestrianSimulator(initial_position=0, initial_velocity=0.1, rationality=rationality, sim_time=T, dt=dt, N=N, y_pos=y_pos, vel_variance=vel_variance)
+predictions, state_cache = uncontrolled_agent.simulate_pedestrian()
 
-# vis = Visualizer(x_positions=state_cache, y_value=y_pos, gmm_predictions=predictions)
-# vis.animate()
+vis = Visualizer(x_positions=state_cache, y_value=y_pos, gmm_predictions=predictions)
+vis.animate()
