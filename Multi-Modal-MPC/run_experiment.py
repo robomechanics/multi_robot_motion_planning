@@ -21,7 +21,7 @@ if __name__ == "__main__":
     mpc_params = {
         'num_agents': 1,
         'dt': 0.2,
-        'N' : 10,
+        'N' : 15,
         'rob_dia': 0.3,
         'v_lim': 1.0,
         'omega_lim': 1.0,
@@ -43,9 +43,9 @@ if __name__ == "__main__":
     obstacle_density = 0.0
     # map = generate_map(map_size, 0)
 
-    num_trials = 3
+    num_trials = 10
     algs = ["MM-MPC"]
-    noise_levels = [0.05, 0.1]
+    noise_levels = [0.01]
 
     # results = calculate_success_rate("mm_results")
     # plot_success_rates(results)
@@ -60,7 +60,7 @@ if __name__ == "__main__":
                     mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities, feedback=True)
                     mpc.simulate()
                 if alg == "Branch-MPC":
-                    mpc = Branch_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+                    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
                     mpc.simulate()
                 else:
                     mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
