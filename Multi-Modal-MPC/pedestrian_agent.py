@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation
 import matplotlib.patches as patches
+import time
 
 class Visualizer:
     def __init__(self, x_positions, y_value, gmm_predictions, road_width=1, interval=100):
@@ -61,30 +62,72 @@ class Visualizer:
         plt.show()
 
 class PedestrianSimulator:
-    def __init__(self, initial_position, initial_velocity):
+    def __init__(self, initial_position, initial_velocity, rationality, sim_time, dt, N, y_pos):
         self.position = initial_position
         self.velocity = initial_velocity
         self.dt = 0.1
         self.road_width = 2
-        self.rationality = 0.5
+        self.rationality = rationality
         self.state_cache = []
+        self.predictions = []
         self.actions = [self.velocity, -self.velocity]
         self.init_state_variance = 0.01
-        self.T = 10
-        self.N = 10
+        self.T = sim_time
+        self.N = 20
+        self.rationality = rationality
+        self.action_probabilities = [0.5, 0.5]
+        self.switch_time = (1 - rationality) * self.T
+        self.initial_action = np.random.choice(self.actions, p=self.action_probabilities)
+        self.start_time = time.time()
+        self.dt = dt
+        self.N = N
+        self.y_pos = y_pos
 
     def step(self):
-        self.position += self.velocity * self.dt
-        self.state_cache.append(self.position) 
+        elapsed_time = (time.time() - self.start_time) * 10000 
+        if(elapsed_time < self.switch_time):
+            self.position += self.initial_action * self.dt
+        else:
+            self.position += -self.initial_action * self.dt
+        
+        self.state_cache.append((self.position,self.y_pos)) 
 
-        return self.position
+        return (self.position,self.y_pos)
     
     def step_from_current(self, current_state, action):
-        next_state = current_state + action * self.dt
+        next_x_pos = current_state[0] + action * self.dt
+        next_state = (next_x_pos, current_state[1])
 
         return next_state
     
-    def get_gmm_from_current(self, current_state):
+    def get_gmm_predictions(self):
+        # Single dictionary for the single agent
+        agent_prediction = {}
+
+        # Calculate the mean and covariance for each action at each timestep within the prediction horizon
+        for mode, action in enumerate(self.actions):
+            # Mean and covariance vectors for the entire prediction horizon
+            means = []
+            covariances = []
+
+            # Populate the means and covariances for each timestep within the prediction horizon
+            for _ in np.arange(0, self.T, self.dt):
+                means.append(action)  # The mean of v and omega is the action's value
+                covariance = np.diag([self.init_state_variance**2, self.init_state_variance**2])  # Diagonal covariance matrix
+                covariances.append(covariance)
+    
+            # Assign the mean and covariance vectors to the corresponding mode
+            agent_prediction[mode] = {
+                'means': means,  # List of means over the prediction horizon
+                'covariances': covariances  # List of covariance matrices over the prediction horizon
+            }
+
+        # The predictions for all modes of the single agent are encapsulated in a list
+        gmm_predictions = [agent_prediction]
+
+        return gmm_predictions
+    
+    def get_gmm_predictions_from_current(self, current_state):
          # Single dictionary for the single agent
         agent_prediction = {}
 
@@ -126,22 +169,25 @@ class PedestrianSimulator:
         gmm_predictions = [agent_prediction]
 
         return gmm_predictions
+    
+    def simulate_pedestrian(self):
+        for _ in range(int(self.T / self.dt)):
+            position = self.step()
+            pred = self.get_gmm_predictions_from_current(position)
+            self.predictions.append(pred[0])
 
-# Create an instance of the simulator
-sim = PedestrianSimulator(initial_position=0, initial_velocity=0.1)
+        return self.predictions, self.state_cache
 
 # Simulation parameters
-T = 10  # total simulation time
-dt = 0.1
+# T = 6 
+# dt = 0.1
+# rationality = 0.1
+# N = 20
+# y_pos=3
 
-# Run the simulation
-positions = []
-gmm_predictions = []
-for time in range(int(T / dt)):
-    position = sim.step()
-    gmm_pred = sim.get_gmm_from_current(position)
-    gmm_predictions.append(gmm_pred[0])
-    positions.append(position)
+# # Create an instance of the simulator
+# uncontrolled_agent = PedestrianSimulator(initial_position=0, initial_velocity=0.1, rationality=rationality, sim_time=T, dt=dt, N=N, y_pos=2)
+# predictions, state_cache = uncontrolled_agent.simulate_pedestrian()
 
-vis = Visualizer(x_positions=positions, y_value=2, gmm_predictions=gmm_predictions)
-vis.animate()
+# vis = Visualizer(x_positions=state_cache, y_value=y_pos, gmm_predictions=predictions)
+# vis.animate()

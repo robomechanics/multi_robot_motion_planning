@@ -5,7 +5,7 @@ from branch_mpc import Branch_MPC
 import numpy as np
 from utils import *
 import matplotlib.pyplot as plt
-from uncontrolled_agent import UncontrolledAgent
+from pedestrian_agent import PedestrianSimulator
 
 if __name__ == "__main__":
     initial_states = [[4.0, 0.0, 0.0]]
@@ -20,8 +20,8 @@ if __name__ == "__main__":
     }
     mpc_params = {
         'num_agents': 1,
-        'dt': 0.2,
-        'N' : 10,
+        'dt': 0.1,
+        'N' : 20,
         'rob_dia': 0.3,
         'v_lim': 1.0,
         'omega_lim': 1.0,
@@ -39,28 +39,27 @@ if __name__ == "__main__":
 
     obs = {"static": static_obs, "dynamic": obs_traj}
 
-    map_size = (15,15)
-    obstacle_density = 0.0
-    # map = generate_map(map_size, 0)
-
-    num_trials = 3
-    algs = ["MM-MPC", "MPC", "Branch-MPC"]
+    num_trials = 1
+    algs = ["MM-MPC"]
     noise_levels = [0.05, 0.4]
+    rationality = 0.5
+    T = 6
+    y_pos = 3
 
     for trial in range(num_trials):
         for noise_level in noise_levels:
-            uncontrolled_agent = UncontrolledAgent(dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=noise_level)
-            predictions, uncontrolled_traj, mode_probabilities = uncontrolled_agent.simulate_diff_drive()
+            uncontrolled_agent = PedestrianSimulator(initial_position=0, initial_velocity=0.1, rationality=rationality, sim_time=T, dt=mpc_params['dt'], N=mpc_params['N'], y_pos=y_pos)
+            predictions, uncontrolled_traj = uncontrolled_agent.simulate_pedestrian()
             
             for alg in algs:
                 scenario = alg + "_" + "n_" + str(noise_level)
                 if alg == "MM-MPC":
-                    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities, feedback=True)
+                    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, feedback=True)
                     mpc.simulate()
                 if alg == "Branch-MPC":
-                    mpc = Branch_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+                    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj)
                     mpc.simulate()
                 else:
-                    mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+                    mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj)
                     mpc.simulate()
                 

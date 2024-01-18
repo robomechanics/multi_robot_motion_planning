@@ -124,6 +124,7 @@ class MM_MPC(MPC_Base):
         n_modes = len(gmm_predictions[0])
         n_obs=len(gmm_predictions)
 
+        print(n_obs)
         ####
         # EV feedforward + TV state feedback policies from https://arxiv.org/abs/2109.09792
         # U_stack[j] = opt_controls + sum_i=1^{N_obs} K_stack[i][j]@(O_stack[i][j] - E[O_stack[i][j]])
@@ -180,10 +181,11 @@ class MM_MPC(MPC_Base):
         R = self.cost_func_params['R']
         P = self.cost_func_params['P']
 
-        mode_prob = self.mode_prob[self.num_timestep] 
+        # mode_prob = self.mode_prob[self.num_timestep] 
         for j in range(n_modes):
             for k in range(self.N):
-                mode_weight = mode_prob[j]
+                # mode_weight = mode_prob[j]
+                mode_weight = 1
                 robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]-opt_xs.T), Q, (opt_states[j][k, :]-opt_xs.T).T] 
                             )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) + 100000 * opt_epsilon_r[j][k]) #+ 100000 * opt_epsilon_o[k] 
             
