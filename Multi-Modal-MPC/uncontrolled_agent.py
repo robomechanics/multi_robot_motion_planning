@@ -2,9 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from visualizer import Visualizer
+import objgraph
 
 class UncontrolledAgent:
-    def __init__(self, dt=0.2, T=40, H=15, min_action_duration=1, num_switches=2, action_variance=None):
+    def __init__(self, init_state, dt=0.1, T=20, H=10, min_action_duration=1, num_switches=2, action_variance=None):
+        self.init_state = init_state
+        self.num_agents = len(init_state)
         self.dt = dt
         self.T = T 
         self.H = H
@@ -13,15 +16,23 @@ class UncontrolledAgent:
         self.num_switches = num_switches
         self.omega_variance = 0.2 if action_variance is None else action_variance   # Variances for omega corresponding to each action
         self.v_variance = 0.2 if action_variance is None else action_variance
-        self.action_prob = [0.25, 0.5, 0.25]
+        self.action_prob = [0.3, 0.4, 0.3]
         self.actions = [
-        (np.random.normal(0.2, 0.05), np.random.normal(0.2, 0.02)), 
-        (np.random.normal(0.3, 0.05), np.random.normal(0.0, 0.01)),
-        (np.random.normal(0.2, 0.05), np.random.normal(-0.2, 0.02))]
+        (np.random.normal(0.2, 0.01), np.random.normal(0.05, 0.01)), 
+        (np.random.normal(0.2, 0.01), np.random.normal(0.0, 0.01)),
+        (np.random.normal(0.2, 0.01), np.random.normal(-0.05, 0.01))]
         self.noise_range = [-0.02, 0.02]
         self.prior_likelihood = [0.25, 0.5, 0.25]
         self.alpha = 0.2
         self.min_probability = 0.1
+
+        self.uncontrolled_fleet_data = {}
+        for agent_id in range(self.num_agents):
+            self.uncontrolled_fleet_data[agent_id] = {
+                'predictions': [[] for _ in range(len(self.actions))],  # Assuming 'actions' is defined
+                'executed_traj': [],
+                'mode_probabilities': []
+            }
 
     def propagate_state(self, x, y, theta, v, omega):
         noise_x = np.random.uniform(self.noise_range[0], self.noise_range[1])
@@ -56,131 +67,135 @@ class UncontrolledAgent:
 
         return likelihood
 
-    def simulate_diff_drive(self, x0=0, y0=0, theta0=0):
-        predictions = [[] for _ in self.actions]
-        executed_traj = []
-        mode_probabilities = []
+    def simulate_diff_drive(self):
+        for agent_id in range(self.num_agents):
+            init_state = self.init_state[agent_id]
+            x, y, theta = init_state[0], init_state[1], init_state[2]
+            self.switch_times = self.generate_switch_times()
+            switch_index = 0
 
-        self.switch_times = self.generate_switch_times()
-        switch_index = 0
+            self.uncontrolled_fleet_data[agent_id]['executed_traj'].append((init_state))
+            current_action_duration = 0
+            selected_action = self.actions[np.random.choice(len(self.actions), p=self.action_prob)]
+            state_prob = self.prior_likelihood
 
-        x, y, theta = x0, y0, theta0
-        executed_traj.append((x,y,theta))
-        current_action_duration = 0
-        selected_action = self.actions[np.random.choice(len(self.actions), p=self.action_prob)]
-        state_prob = self.prior_likelihood
+            for t in np.arange(0, self.T, self.dt):
+                if switch_index < len(self.switch_times) and t >= self.switch_times[switch_index]:
+                    selected_action = self.actions[np.random.choice(len(self.actions), p=self.action_prob)]
+                    switch_index += 1
+                    state_prob = self.prior_likelihood
+                
+                likelihood = self.calculate_likelihood(selected_action)
+                new_state_prob = (likelihood * state_prob) / np.sum(likelihood * state_prob)
 
-        for t in np.arange(0, self.T, self.dt):
-            if switch_index < len(self.switch_times) and t >= self.switch_times[switch_index]:
-                selected_action = self.actions[np.random.choice(len(self.actions), p=self.action_prob)]
-                switch_index += 1
-                state_prob = self.prior_likelihood
-            
-            likelihood = self.calculate_likelihood(selected_action)
-            new_state_prob = (likelihood * state_prob) / np.sum(likelihood * state_prob)
+                # Apply smoothing to each element
+                state_prob = [self.alpha * new_state_prob[i] + (1 - self.alpha) * state_prob[i] for i in range(len(state_prob))]
 
-            # Apply smoothing to each element
-            state_prob = [self.alpha * new_state_prob[i] + (1 - self.alpha) * state_prob[i] for i in range(len(state_prob))]
+                state_prob = [max(p, self.min_probability) for p in state_prob]
 
-            state_prob = [max(p, self.min_probability) for p in state_prob]
+                # Renormalize the probabilities to ensure they sum to 1
+                total_prob = sum(state_prob)
+                state_prob = [p / total_prob for p in state_prob]
 
-            # Renormalize the probabilities to ensure they sum to 1
-            total_prob = sum(state_prob)
-            state_prob = [p / total_prob for p in state_prob]
+                self.uncontrolled_fleet_data[agent_id]['mode_probabilities'].append(state_prob)
 
-            mode_probabilities.append(state_prob)
+                for i, (v, omega) in enumerate(self.actions):
+                    temp_x, temp_y, temp_theta = x, y, theta
+                    traj = []
+                    accumulated_noise_x, accumulated_noise_y = 0, 0
+                    for _ in np.arange(0, self.H, self.dt):
+                        temp_x, temp_y, temp_theta, noise_x, noise_y = self.propagate_state(temp_x, temp_y, temp_theta, v, omega)
+                        accumulated_noise_x += noise_x
+                        accumulated_noise_y += noise_y
+                        traj.append((temp_x, temp_y, accumulated_noise_x, accumulated_noise_y))
+                    self.uncontrolled_fleet_data[agent_id]['predictions'][i].append(traj)
 
-            for i, (v, omega) in enumerate(self.actions):
-                temp_x, temp_y, temp_theta = x, y, theta
-                traj = []
-                accumulated_noise_x, accumulated_noise_y = 0, 0
-                for _ in np.arange(0, self.H, self.dt):
-                    temp_x, temp_y, temp_theta, noise_x, noise_y = self.propagate_state(temp_x, temp_y, temp_theta, v, omega)
-                    accumulated_noise_x += noise_x
-                    accumulated_noise_y += noise_y
-                    traj.append((temp_x, temp_y, accumulated_noise_x, accumulated_noise_y))
-                predictions[i].append(traj)
+                # Update robot's actual state using the selected action
+                x, y, theta, noise_x, noise_y = self.propagate_state(x, y, theta, selected_action[0], selected_action[1])
+                self.uncontrolled_fleet_data[agent_id]['executed_traj'].append((x,y,theta))
+                current_action_duration += self.dt
 
-            # Update robot's actual state using the selected action
-            x, y, theta, noise_x, noise_y = self.propagate_state(x, y, theta, selected_action[0], selected_action[1])
-            executed_traj.append((x,y,theta))
-            current_action_duration += self.dt
-
-        return predictions, executed_traj, mode_probabilities
+        return self.uncontrolled_fleet_data
 
     def get_gmm_predictions(self):
-        # Single dictionary for the single agent
-        agent_prediction = {}
+        gmm_predictions = []
 
-        # Calculate the mean and covariance for each action at each timestep within the prediction horizon
-        for mode, (v, omega) in enumerate(self.actions):
-            # Mean and covariance vectors for the entire prediction horizon
-            means = []
-            covariances = []
+        for agent in range(self.num_agents):
+            agent_prediction = {}
+            # Calculate the mean and covariance for each action at each timestep within the prediction horizon
+            for mode, (v, omega) in enumerate(self.actions):
+                # Mean and covariance vectors for the entire prediction horizon
+                means = []
+                covariances = []
 
-            # Populate the means and covariances for each timestep within the prediction horizon
-            for _ in np.arange(0, self.H, self.dt):
-                means.append([v, omega])  # The mean of v and omega is the action's value
-                covariance = np.diag([self.v_variance**2, self.omega_variance**2])  # Diagonal covariance matrix
-                covariances.append(covariance)
-    
-            # Assign the mean and covariance vectors to the corresponding mode
-            agent_prediction[mode] = {
-                'means': means,  # List of means over the prediction horizon
-                'covariances': covariances  # List of covariance matrices over the prediction horizon
-            }
+                # Populate the means and covariances for each timestep within the prediction horizon
+                for _ in np.arange(0, self.H, self.dt):
+                    means.append([v, omega])  # The mean of v and omega is the action's value
+                    covariance = np.diag([self.v_variance**2, self.omega_variance**2])  # Diagonal covariance matrix
+                    covariances.append(covariance)
+        
+                # Assign the mean and covariance vectors to the corresponding mode
+                agent_prediction[mode] = {
+                    'means': means,  # List of means over the prediction horizon
+                    'covariances': covariances  # List of covariance matrices over the prediction horizon
+                }
 
-        # The predictions for all modes of the single agent are encapsulated in a list
-        gmm_predictions = [agent_prediction]
+            # The predictions for all modes of the single agent are encapsulated in a list
+            gmm_predictions.append(agent_prediction)
 
         return gmm_predictions
 
     def get_gmm_predictions_from_current(self, current_state):
-        # Single dictionary for the single agent
-        agent_prediction = {}
+        gmm_predictions = []
 
-        # Calculate the mean and covariance for each action at each timestep within the prediction horizon
-        for mode, (v, omega) in enumerate(self.actions):
-            # Initial state
-            x ,y, theta = current_state[0], current_state[1], current_state[2]
+        for agent in range(self.num_agents):
+            # Single dictionary for the single agent
+            agent_prediction = {}
+            # Calculate the mean and covariance for each action at each timestep within the prediction horizon
+            for mode, (v, omega) in enumerate(self.actions):
+                # Initial state
+                x ,y, theta = current_state[0], current_state[1], current_state[2]
 
-            # Initialize the covariance matrix for the initial state
-            covariance = np.diag([self.init_state_variance[0], self.init_state_variance[1], self.init_state_variance[2]])
+                # Initialize the covariance matrix for the initial state
+                covariance = np.diag([self.init_state_variance[0], self.init_state_variance[1], self.init_state_variance[2]])
 
-            # Mean and covariance vectors for the entire prediction horizon
-            means = []
-            covariances = []
+                # Mean and covariance vectors for the entire prediction horizon
+                means = []
+                covariances = []
 
-            # Process noise matrix, assuming it's constant over time
-            Q = np.diag([self.v_variance**2, self.v_variance**2, self.omega_variance**2])
+                # Process noise matrix, assuming it's constant over time
+                Q = np.diag([self.v_variance**2, self.v_variance**2, self.omega_variance**2])
 
-            # Populate the means and covariances for each timestep within the prediction horizon
-            for step in np.arange(0, self.H, self.dt):
-                # Propagate the state without additional noise
-                x, y, theta, noise_x, noise_y = self.propagate_state(x, y, theta, v, omega)
-                means.append([x, y, theta])  # Mean of the state after propagation
+                # Populate the means and covariances for each timestep within the prediction horizon
+                for step in np.arange(0, self.H, self.dt):
+                    # Propagate the state without additional noise
+                    x, y, theta, noise_x, noise_y = self.propagate_state(x, y, theta, v, omega)
+                    means.append([x, y, theta])  # Mean of the state after propagation
 
-                # Predict the new covariance matrix
-                covariance = covariance + Q * self.dt  # Simplified prediction step for covariance
+                    # Predict the new covariance matrix
+                    covariance = covariance + Q * self.dt  # Simplified prediction step for covariance
 
-                # Store the predicted covariance matrix
-                covariances.append(covariance)
-      
-            # Assign the mean and covariance vectors to the corresponding mode
-            agent_prediction[mode] = {
-                'means': means,  # List of means over the prediction horizon
-                'covariances': covariances  # List of covariance matrices over the prediction horizon
-            }
+                    # Store the predicted covariance matrix
+                    covariances.append(covariance)
+        
+                # Assign the mean and covariance vectors to the corresponding mode
+                agent_prediction[mode] = {
+                    'means': means,  # List of means over the prediction horizon
+                    'covariances': covariances  # List of covariance matrices over the prediction horizon
+                }
 
-        # The predictions for all modes of the single agent are encapsulated in a list
-        gmm_predictions = [agent_prediction]
+            # The predictions for all modes of the single agent are encapsulated in a list
+            gmm_predictions.append(agent_prediction)
 
         return gmm_predictions
 
-# agent = UncontrolledAgent()
-# traj, prediction, mode_probabilities = agent.simulate_diff_drive()
+initial_states = [(0.0, 1.0, 0.0), (0.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 2.0, 0.0)]
 
-# predicitons = agent.get_gmm_predictions()
+agent = UncontrolledAgent(init_state=initial_states)
+uncontrolled_fleet_data = agent.simulate_diff_drive()
 
-# vis = Visualizer(traj, agent.actions, agent.switch_times, mode_probabilities)
-# vis.show()
+predicitons = agent.get_gmm_predictions()
+
+# objgraph.show_refs([uncontrolled_fleet_data])
+vis = Visualizer(agent.uncontrolled_fleet_data, agent.actions)
+vis.show()

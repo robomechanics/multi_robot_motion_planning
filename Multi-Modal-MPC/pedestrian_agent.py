@@ -147,7 +147,7 @@ class PedestrianSimulator:
             covariances = []
 
             # Process noise matrix, assuming it's constant over time
-            Q = self.vel_variance
+            Q = np.diag([self.vel_variance**2, 0.0])
 
             temp_state = current_state
 
@@ -162,7 +162,7 @@ class PedestrianSimulator:
                 covariance = covariance + Q * self.dt  # Simplified prediction step for covariance
 
                 # Store the predicted covariance matrix
-                covariances.append(covariance)
+                covariances.append(np.array(covariance))
 
                 temp_state = new_state
       
@@ -191,7 +191,7 @@ dt = 0.1
 rationality = 0.8
 N = 20
 y_pos = 3
-vel_variance = 0.05
+vel_variance = 0.01
 
 # Create an instance of the simulator
 uncontrolled_agent = PedestrianSimulator(initial_position=0, initial_velocity=0.1, rationality=rationality, sim_time=T, dt=dt, N=N, y_pos=y_pos, vel_variance=vel_variance)

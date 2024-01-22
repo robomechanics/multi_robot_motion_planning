@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 from pedestrian_agent import PedestrianSimulator
 
 if __name__ == "__main__":
-    initial_states = [[4.0, 0.0, 0.0]]
-    final_states = [[0.0, 0.0, 0.0]]
+    initial_states = [[0.0, 2.0, np.pi/2]]
+    final_states = [[0.0, 4.0, np.pi/2]]
 
     cost_func_params = {
         'Q': np.array([[7.0, 0.0, 0.0], [0.0, 7.0, 0.0], [0.0, 0.0, 2.5]]),
@@ -40,26 +40,35 @@ if __name__ == "__main__":
     obs = {"static": static_obs, "dynamic": obs_traj}
 
     num_trials = 1
-    algs = ["MM-MPC"]
-    noise_levels = [0.05, 0.4]
+    algs = ["MPC"]
+    vel_var_levels = [0.05, 0.4]
     rationality = 0.5
     T = 6
     y_pos = 3
 
-    for trial in range(num_trials):
-        for noise_level in noise_levels:
-            uncontrolled_agent = PedestrianSimulator(initial_position=0, initial_velocity=0.1, rationality=rationality, sim_time=T, dt=mpc_params['dt'], N=mpc_params['N'], y_pos=y_pos)
-            predictions, uncontrolled_traj = uncontrolled_agent.simulate_pedestrian()
+    scenario = "test"
+    trial = 1
+
+    uncontrolled_agent = PedestrianSimulator(initial_position=0, initial_velocity=0.1, rationality=rationality, sim_time=T, dt=mpc_params['dt'], N=mpc_params['N'], y_pos=y_pos, vel_variance=0.01)
+    predictions, uncontrolled_traj = uncontrolled_agent.simulate_pedestrian()
+
+    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj)
+    mpc.simulate()
+    
+    # for trial in range(num_trials):
+    #     for var_level in vel_var_levels:
+    #         uncontrolled_agent = PedestrianSimulator(initial_position=0, initial_velocity=0.1, rationality=rationality, sim_time=T, dt=mpc_params['dt'], N=mpc_params['N'], y_pos=y_pos, vel_variance=var_level)
+    #         predictions, uncontrolled_traj = uncontrolled_agent.simulate_pedestrian()
             
-            for alg in algs:
-                scenario = alg + "_" + "n_" + str(noise_level)
-                if alg == "MM-MPC":
-                    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, feedback=True)
-                    mpc.simulate()
-                if alg == "Branch-MPC":
-                    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj)
-                    mpc.simulate()
-                else:
-                    mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj)
-                    mpc.simulate()
+    #         for alg in algs:
+    #             scenario = alg + "_" + "n_" + str(var_level)
+    #             if alg == "MM-MPC":
+    #                 mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, feedback=True)
+    #                 mpc.simulate()
+    #             if alg == "Branch-MPC":
+    #                 mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj)
+    #                 mpc.simulate()
+    #             else:
+    #                 mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj)
+    #                 mpc.simulate()
                 

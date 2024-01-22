@@ -116,15 +116,12 @@ class MM_MPC(MPC_Base):
         # opt_states = opti.variable(self.N + 1, 3)
         # opt_x = opt_states[:,0]
         # opt_y = opt_states[:,1]
-
-        # Only one obstacle?
         current_state_obs = self.uncontrolled_traj[self.num_timestep]
         gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_state_obs)
         noise_chars      = self.uncontrolled_agent.get_gmm_predictions()
         n_modes = len(gmm_predictions[0])
         n_obs=len(gmm_predictions)
 
-        print(n_obs)
         ####
         # EV feedforward + TV state feedback policies from https://arxiv.org/abs/2109.09792
         # U_stack[j] = opt_controls + sum_i=1^{N_obs} K_stack[i][j]@(O_stack[i][j] - E[O_stack[i][j]])
@@ -224,7 +221,6 @@ class MM_MPC(MPC_Base):
             for mode, prediction in agent_prediction.items():
                 mean_traj = prediction['means']
                 covariances = prediction['covariances']
-
                 mean_inputs  = agent_noise[mode]['means']
                 covar_inputs = agent_noise[mode]['covariances']
 

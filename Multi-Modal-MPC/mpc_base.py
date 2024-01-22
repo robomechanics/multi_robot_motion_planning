@@ -8,7 +8,7 @@ from matplotlib.patches import Circle, Arrow
 from matplotlib.animation import FuncAnimation
 
 class MPC_Base:
-    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=None, ref=None, mode_prob=None, feedback=None):
+    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=None, ref=None, feedback=None):
         self.num_agent = mpc_params['num_agents']
         self.dt = mpc_params['dt']
         self.N = mpc_params['N']
@@ -26,9 +26,8 @@ class MPC_Base:
         self.cost_func_params = cost_func_params
         self.scenario = scenario
         self.trial = trial
-        self.uncontrolled_agent = uncontrolled_agent
-        self.uncontrolled_traj = uncontrolled_traj
-        self.mode_prob = mode_prob
+        self.uncontrolled_fleet = uncontrolled_fleet
+        self.uncontrolled_fleet_data = uncontrolled_fleet_data
         self.delta = 0.03
         self.num_modes = 3
         self.robust_horizon = 2

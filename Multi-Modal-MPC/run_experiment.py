@@ -21,7 +21,7 @@ if __name__ == "__main__":
     mpc_params = {
         'num_agents': 1,
         'dt': 0.2,
-        'N' : 15,
+        'N' : 10,
         'rob_dia': 0.3,
         'v_lim': 1.0,
         'omega_lim': 1.0,
@@ -46,24 +46,23 @@ if __name__ == "__main__":
     num_trials = 10
     algs = ["MM-MPC"]
     noise_levels = [0.01]
+    uncontrolled_initial_states = [(0.0, 0.5, 0.0)]
+
 
     # results = calculate_success_rate("mm_results")
     # plot_success_rates(results)
     for noise_level in noise_levels:
         for trial in range(num_trials):
-            uncontrolled_agent = UncontrolledAgent(dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=noise_level)
-            predictions, uncontrolled_traj, mode_probabilities = uncontrolled_agent.simulate_diff_drive()
+            uncontrolled_fleet = UncontrolledAgent(init_state=uncontrolled_initial_states, dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=noise_level)
+            uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
             
             for alg in algs:
                 scenario = alg + "_" + "n_" + str(noise_level)
                 if alg == "MM-MPC":
-                    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities, feedback=True)
-                    mpc.simulate()
-                if alg == "Branch-MPC":
-                    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+                    mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=True)
                     mpc.simulate()
                 else:
-                    mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj, map=map, mode_prob=mode_probabilities)
+                    mpc = MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map)
                     mpc.simulate()
                 
 
