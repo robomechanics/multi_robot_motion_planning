@@ -62,7 +62,7 @@ class Branch_MPC(MPC_Base):
         # ref_seg = self.extract_trajectory_segment(current_state)
         # ref = np.array([[d['x'], d['y']] for d in ref_seg[agent_id]])
 
-        mode_prob = self.mode_prob[self.num_timestep]
+        # mode_prob = self.mode_prob[self.num_timestep]
         for k in range(self.N):
             for m in range(self.num_modes):
             # if self.ref:
@@ -70,7 +70,8 @@ class Branch_MPC(MPC_Base):
             #     robot_cost = robot_cost + ca.mtimes([(opt_states[k, :]-opt_xs.T), Q, (opt_states[k, :]-opt_xs.T).T]
             #                             ) + ca.mtimes([opt_controls[k, :], R, opt_controls[k, :].T]) + ca.mtimes([(opt_states[k, :2]-curr_ref), P, (opt_states[k, :2]-curr_ref).T]) + 100000 * opt_epsilon_o[k]
             # else: 
-                mode_weight = mode_prob[m]
+                # mode_weight = mode_prob[m]
+                mode_weight = 1
                 robot_cost = robot_cost + mode_weight * (ca.mtimes([(opt_states[m][k, :]-opt_xs.T), Q, (opt_states[m][k, :]-opt_xs.T).T]
                                             ) + ca.mtimes([opt_controls[m][k, :], R, opt_controls[m][k, :].T])) +  100000 * opt_epsilon_r[m][k]
             
@@ -188,7 +189,7 @@ class Branch_MPC(MPC_Base):
         self.prediction_cache = {agent_id: np.empty((3, self.N+1, self.num_modes)) for agent_id in range(self.num_agent)}
         self.control_cache = {agent_id: np.empty((2, self.N, self.num_modes)) for agent_id in range(self.num_agent)}
         
-        # self.setup_visualization()
+        self.setup_visualization()
 
         # parallelized implementation
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
@@ -206,9 +207,9 @@ class Branch_MPC(MPC_Base):
 
             current_uncontrolled_state = self.uncontrolled_traj[self.num_timestep]
             gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
-            mode_prob = self.mode_prob[self.num_timestep] 
+            # mode_prob = self.mode_prob[self.num_timestep] 
 
-            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0], mode_prob)
+            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0])
             
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
