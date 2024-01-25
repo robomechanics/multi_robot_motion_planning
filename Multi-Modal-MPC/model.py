@@ -58,8 +58,6 @@ class DiffDrive:
         dt : discretization time-step.
        
         """
-
-        
         sym_x  = ca.MX.sym("x", self.n_x)
         sym_u  = ca.MX.sym("u", self.n_u)
 
