@@ -80,8 +80,9 @@ class MPC(MPC_Base):
         ##### Get chance constraints from the given GMM prediction
         ## aij = (pi - pj) / ||pi - pj|| and bij = ri + rj 
         ## aij^T(pi - pj) - bij >= erf^-1(1 - 2delta)sqrt(2*aij^T(sigma_i + sigma_j)aij)
-        current_uncontrolled_state = self.uncontrolled_traj[self.num_timestep]
-        gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
+        uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
+        current_uncontrolled_state = uncontrolled_traj[self.num_timestep]
+        gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)
 
         for k, agent_prediction in enumerate(gmm_predictions):
             for j, prediction in agent_prediction.items():
@@ -185,8 +186,9 @@ class MPC(MPC_Base):
             pool.close()
             pool.join()
 
-            current_uncontrolled_state = self.uncontrolled_traj[self.num_timestep]
-            gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
+            uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
+            current_uncontrolled_state = uncontrolled_traj[self.num_timestep]
+            gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)
 
             self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0])
             

@@ -6,9 +6,10 @@ import matplotlib.pyplot as plt
 from metrics_logger import MetricsLogger
 from matplotlib.patches import Circle, Arrow
 from matplotlib.animation import FuncAnimation
+import seaborn as sns
 
 class MPC_Base:
-    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=None, ref=None, feedback=None):
+    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=None, ref=None, feedback=None, robust_horizon=None):
         self.num_agent = mpc_params['num_agents']
         self.dt = mpc_params['dt']
         self.N = mpc_params['N']
@@ -29,8 +30,8 @@ class MPC_Base:
         self.uncontrolled_fleet = uncontrolled_fleet
         self.uncontrolled_fleet_data = uncontrolled_fleet_data
         self.delta = 0.03
-        self.num_modes = 3
-        self.robust_horizon = 2
+        self.num_modes = 2
+        self.robust_horizon = robust_horizon
         self.feedback = feedback
 
         self.model = DiffDrive(self.rob_dia)
@@ -45,6 +46,8 @@ class MPC_Base:
         self.prev_epsilon_o = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
         self.prev_epsilon_r = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
         
+        self.feedback_gains = {mode_id: np.zeros((2*self.N, 2*self.N)) for mode_id in range(self.num_modes)}
+        self.heatmaps = []
         self.current_state = {}
         for i in range(self.num_agent):
             self.current_state[i] = self.initial_state[i]
@@ -264,7 +267,32 @@ class MPC_Base:
             self.ax_prob.set_ylabel('Mode Probabilities')
 
         plt.draw()
-        plt.pause(0.1)
+        plt.pause(0.05)
+    
+    def setup_visualization_heatmap(self):
+        num_plots = len(self.feedback_gains)
+
+        # Create a figure with subplots
+        self.fig, self.axes = plt.subplots(1, num_plots, figsize=(6 * num_plots, 6))
+        plt.ion()  # Turn on interactive mode
+
+    def plot_feedback_gains(self):
+        for i, (mode, gain_matrix) in enumerate(self.feedback_gains.items()):
+            ax = self.axes[i]
+
+            # Remove existing colorbar, if any
+            for cbar in ax.collections:
+                if hasattr(cbar, 'colorbar') and cbar.colorbar:
+                    cbar.colorbar.remove()
+
+            ax.clear()  # Clear the axes for the new heatmap
+            heatmap = sns.heatmap(gain_matrix, ax=ax, vmin=-10, vmax=10)
+            ax.set_title("Feedback Gain for Mode " + str(mode))  # Set title for the heatmap
+
+        self.fig.tight_layout()  # Adjust the layout
+        plt.draw()
+        plt.pause(0.05)  # Pause for a brief moment
+
 
     def simulate(self):
         raise NotImplementedError("Subclasses must implement the functionality")

@@ -371,7 +371,7 @@ def plot_success_rates(results):
     noise_levels = sorted(results.keys())
 
     # Algorithms in order
-    algorithms = ["MM-MPC", "MPC", "Branch-MPC"]
+    algorithms = ["MM-MPC", "Branch-MPC","Robust-MPC"]
 
     # Prepare data for plotting
     data_to_plot = {alg: [] for alg in algorithms}
@@ -389,8 +389,8 @@ def plot_success_rates(results):
 
     # Add some text for labels, title, and custom x-axis tick labels, etc.
     ax.set_xlabel('Prediction uncertainty level')
-    ax.set_ylabel('Number of Infeasible Solves')
-    ax.set_title('Number of Infeasible Solves')
+    ax.set_ylabel('Ratio of Infeasible Solves')
+    ax.set_title('Ratio of Infeasible Solves')
     ax.set_xticks(x + width)
     ax.set_xticklabels(noise_levels)
     ax.legend()

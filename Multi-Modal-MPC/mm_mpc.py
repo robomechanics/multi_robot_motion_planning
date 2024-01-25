@@ -1,12 +1,10 @@
 import casadi as ca
 import numpy as np
 import time
-from draw import Draw_MPC_point_stabilization_v1
 from mpc_base import MPC_Base
 import multiprocessing as mp
 from utils import *
 import scipy.special as sp
-import pdb
 
 class MM_MPC(MPC_Base):
     
@@ -116,9 +114,10 @@ class MM_MPC(MPC_Base):
         # opt_states = opti.variable(self.N + 1, 3)
         # opt_x = opt_states[:,0]
         # opt_y = opt_states[:,1]
-        current_state_obs = self.uncontrolled_traj[self.num_timestep]
-        gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_state_obs)
-        noise_chars      = self.uncontrolled_agent.get_gmm_predictions()
+        uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
+        current_state_obs = uncontrolled_traj[self.num_timestep]
+        gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
+        noise_chars      = self.uncontrolled_fleet.get_gmm_predictions()
         n_modes = len(gmm_predictions[0])
         n_obs=len(gmm_predictions)
 
@@ -131,8 +130,7 @@ class MM_MPC(MPC_Base):
         
         opt_controls = [ca.vertcat(rob_horizon_u, opti.variable(self.N-self.robust_horizon,2)) for _ in range(n_modes)]
         opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(n_modes)]
-        # v = opt_controls[:,0]
-        # omega = opt_controls[:, 1]
+
         A_rob, B_rob, C_rob, E_rob = [], [], [], []
         opt_states, opt_x, opt_y, v, omega = [], [], [], [], []
         for j in range(n_modes):
@@ -161,14 +159,6 @@ class MM_MPC(MPC_Base):
         opt_xs = opti.parameter(3)
         # self.opt_epsilon_r.append(self.opti.variable(self.N+1, 1))
 
-        # init_condition
-        # opti.subject_to(opt_states[0, :] == opt_x0.T)
-        # for j in range(self.N):
-        #     # x_next = opt_states[j, :] + self.f(opt_states[j, :], opt_controls[j, :]).T*self.dt
-        #     # opti.subject_to(opt_states[j+1, :] == x_next)
-        #     opti.subject_to(opti.bounded(0, opt_epsilon_o[j], ca.inf))
-        #     opti.subject_to(opti.bounded(0, opt_epsilon_r[j], ca.inf))
-
         # define the cost function
         robot_cost = 0  # cost
         collision_cost = 0
@@ -178,10 +168,10 @@ class MM_MPC(MPC_Base):
         R = self.cost_func_params['R']
         P = self.cost_func_params['P']
 
-        # mode_prob = self.mode_prob[self.num_timestep] 
+        mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
         for j in range(n_modes):
             for k in range(self.N):
-                # mode_weight = mode_prob[j]
+                mode_weight = mode_prob[j]
                 mode_weight = 1
                 robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]-opt_xs.T), Q, (opt_states[j][k, :]-opt_xs.T).T] 
                             )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) + 100000 * opt_epsilon_r[j][k]) #+ 100000 * opt_epsilon_o[k] 
@@ -311,10 +301,6 @@ class MM_MPC(MPC_Base):
         opti.minimize(total_cost)
         opti.solver('ipopt', opts_setting)
         opti.set_value(opt_xs, self.final_state[agent_id])
-            
-        # start MPC
-        # set parameter, here only update initial state of x (x0)
-        # opti.set_value(opt_x0, current_state)
 
         # # set optimizing target withe init guess
         for j in range(n_modes):
@@ -322,8 +308,6 @@ class MM_MPC(MPC_Base):
                 opti.set_initial(opt_controls[j], self.prev_controls[agent_id])  # (N, 2)
             else:
                 opti.set_initial(opt_controls[j], self.prev_controls[agent_id][j])
-            # opti.set_initial(opt_states, self.prev_states[agent_id])  # (N+1, 3)
-            # opti.set_initial(opt_epsilon_o, self.prev_epsilon_o[agent_id])
 
         u_res = None
         next_states_pred = None
@@ -335,10 +319,15 @@ class MM_MPC(MPC_Base):
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
 
+            
+            for mode in range(self.num_modes):
+                self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
+
             # obtain the control input
             u_res = [sol.value(opt_controls[j]) for j in range(n_modes)]
             # next_states_pred = sol.value(opt_states)
             next_states_pred = [[ca.DM(current_state).T] for j in range(n_modes)]
+
             for j in range(n_modes):
                 for t in range(u_res[j].shape[0]):
                     next_states_pred[j].append(self.model.fCd(next_states_pred[j][-1], u_res[j][t,:]).T)
@@ -360,6 +349,7 @@ class MM_MPC(MPC_Base):
         self.control_cache = {agent_id: np.empty((2, self.N, self.num_modes)) for agent_id in range(self.num_agent)}
 
         self.setup_visualization()
+        self.setup_visualization_heatmap()
         
         # parallelized implementation
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
@@ -376,12 +366,14 @@ class MM_MPC(MPC_Base):
             pool.close()
             pool.join()
 
-            current_uncontrolled_state = self.uncontrolled_traj[self.num_timestep]
-            gmm_predictions = self.uncontrolled_agent.get_gmm_predictions_from_current(current_uncontrolled_state)
+            uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
+            current_uncontrolled_state = uncontrolled_traj[self.num_timestep]
+            gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)
 
-            mode_prob = self.mode_prob[self.num_timestep] 
+            mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep] 
             self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0], mode_prob)
-    
+            self.plot_feedback_gains()
+
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
                 u, next_states_pred = result
