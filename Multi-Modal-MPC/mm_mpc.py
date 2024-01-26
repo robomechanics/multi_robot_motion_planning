@@ -8,6 +8,8 @@ import scipy.special as sp
 
 class MM_MPC(MPC_Base):
     
+    # def _collision_check(self, node, )
+    
     def _get_robot_ATV_dynamics(self, current_state, x_lin=None, u_lin=None):
         """
         Constructs system matrices such for the robot,
@@ -139,6 +141,8 @@ class MM_MPC(MPC_Base):
                 A, B, C, E = self._get_robot_ATV_dynamics(current_state, self.prev_states[agent_id][j], self.prev_controls[agent_id][j])       
             else:
                 A, B, C, E = self._get_robot_ATV_dynamics(current_state)
+                
+                
 
             A_rob.append(A); B_rob.append(B); C_rob.append(C); E_rob.append(E)
 
@@ -322,6 +326,13 @@ class MM_MPC(MPC_Base):
             
             for mode in range(self.num_modes):
                 self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
+                self.obs_affine_model[mode]['T']=T_obs[0][mode]
+                self.obs_affine_model[mode]['c']=c_obs[0][mode]
+                self.obs_affine_model[mode]['E']=E_obs[0][mode]
+                self.rob_affine_model[mode]['A']=A_rob[mode]
+                self.rob_affine_model[mode]['B']=B_rob[mode]
+                self.rob_affine_model[mode]['C']=C_rob[mode]
+                self.rob_affine_model[mode]['E']=E_rob[mode]                
 
             # obtain the control input
             u_res = [sol.value(opt_controls[j]) for j in range(n_modes)]
@@ -336,6 +347,7 @@ class MM_MPC(MPC_Base):
             self.prev_states[agent_id] = next_states_pred
             self.prev_controls[agent_id] = u_res
             self.prev_pol = pol_gains
+            
             # self.prev_epsilon_o[agent_id] = eps_o 
         
         except RuntimeError as e:
