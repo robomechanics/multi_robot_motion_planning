@@ -5,10 +5,56 @@ from mpc_base import MPC_Base
 import multiprocessing as mp
 from utils import *
 import scipy.special as sp
+from scipy.stats import multivariate_normal
+import pdb
 
 class MM_MPC(MPC_Base):
     
-    # def _collision_check(self, node, )
+    def _collision_check(self, agent_id):
+        
+        
+        N_samples = 50
+        
+        N_t = multivariate_normal.rvs(np.zeros(self.N), np.eye(self.N), N_samples)
+        
+        collision_prob = 0.
+        num_collisions = [0 for _ in range(self.num_modes)]
+        min_distance = self.rob_dia*2+0.5
+        
+        eps = 0.01
+        
+        uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
+        current_state_obs = uncontrolled_traj[self.num_timestep]
+        gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
+        mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
+        time1= time.time()
+        for mode in range(self.num_modes):
+            obs_mean = (self.obs_affine_model[mode]['T']@current_state_obs[:2]).reshape((-1,1)) + self.obs_affine_model[mode]['c']
+            rob_mean = ca.vec(self.prev_states[agent_id][mode].T)
+            for sample in range(N_samples):
+                obs_dist = obs_mean + self.obs_affine_model[mode]['E']@N_t[sample,:]
+                
+                rob_dist = rob_mean + self.rob_affine_model[mode]['B']@self.feedback_gains[mode]@(obs_dist[:-2]-obs_mean[:-2])
+                
+                rob_pos_dist = ca.vec(rob_dist.reshape((-1,self.N+1))[:2,:])
+        
+                num_collisions[mode]+=np.linalg.norm(rob_pos_dist-obs_dist)<=min_distance*self.N
+                # print(np.linalg.norm(rob_pos_dist-obs_dist))
+                
+            num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode]
+            collision_prob+=num_collisions[mode]
+            
+        time2=time.time()-time1
+        
+        print("Collision check time:", time2)
+        return num_collisions   
+                
+                
+        
+        
+        
+        
+    
     
     def _get_robot_ATV_dynamics(self, current_state, x_lin=None, u_lin=None):
         """
@@ -190,7 +236,7 @@ class MM_MPC(MPC_Base):
             
             # boundrary and control conditions
             opti.subject_to(opti.bounded(-10.0, opt_x[j], 10.0))
-            opti.subject_to(opti.bounded(-2, opt_y[j], 2))
+            opti.subject_to(opti.bounded(-5, opt_y[j], 5))
             opti.subject_to(opti.bounded(-self.v_lim, v[j], self.v_lim))
             opti.subject_to(opti.bounded(-self.omega_lim, omega[j], self.omega_lim))
             # static obstacle constraint
@@ -326,13 +372,13 @@ class MM_MPC(MPC_Base):
             
             for mode in range(self.num_modes):
                 self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
-                self.obs_affine_model[mode]['T']=T_obs[0][mode]
-                self.obs_affine_model[mode]['c']=c_obs[0][mode]
-                self.obs_affine_model[mode]['E']=E_obs[0][mode]
-                self.rob_affine_model[mode]['A']=A_rob[mode]
-                self.rob_affine_model[mode]['B']=B_rob[mode]
-                self.rob_affine_model[mode]['C']=C_rob[mode]
-                self.rob_affine_model[mode]['E']=E_rob[mode]                
+                self.obs_affine_model[mode]['T']=sol.value(T_obs[0][mode])
+                self.obs_affine_model[mode]['c']=sol.value(c_obs[0][mode]).reshape((-1,1))
+                self.obs_affine_model[mode]['E']=sol.value(E_obs[0][mode])
+                self.rob_affine_model[mode]['A']=sol.value(A_rob[mode])
+                self.rob_affine_model[mode]['B']=sol.value(B_rob[mode])
+                self.rob_affine_model[mode]['C']=sol.value(C_rob[mode])
+                self.rob_affine_model[mode]['E']=sol.value(E_rob[mode])             
 
             # obtain the control input
             u_res = [sol.value(opt_controls[j]) for j in range(n_modes)]
@@ -344,6 +390,8 @@ class MM_MPC(MPC_Base):
                     next_states_pred[j].append(self.model.fCd(next_states_pred[j][-1], u_res[j][t,:]).T)
                 next_states_pred[j] = ca.vertcat(*next_states_pred[j])
             # eps_o = sol.value(opt_epsilon_o)
+            
+            
             self.prev_states[agent_id] = next_states_pred
             self.prev_controls[agent_id] = u_res
             self.prev_pol = pol_gains
@@ -361,7 +409,7 @@ class MM_MPC(MPC_Base):
         self.control_cache = {agent_id: np.empty((2, self.N, self.num_modes)) for agent_id in range(self.num_agent)}
 
         self.setup_visualization()
-        self.setup_visualization_heatmap()
+        # self.setup_visualization_heatmap()
         
         # parallelized implementation
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
@@ -373,6 +421,8 @@ class MM_MPC(MPC_Base):
     
             # Apply MPC solve to each agent in parallel
             results = [self.run_single_mpc(0, np.array(self.current_state[0]), [])]
+            
+          
             # results = pool.starmap(self.run_single_mpc, [(agent_id, np.array(self.current_state[agent_id]), []) for agent_id in range(self.num_agent)])
     
             pool.close()
@@ -384,7 +434,11 @@ class MM_MPC(MPC_Base):
 
             mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep] 
             self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0], mode_prob)
-            self.plot_feedback_gains()
+      
+            # plt.plot(self._collision_check(0))
+            # plt.show()
+            print("Collision Probs:",self._collision_check(0))
+            # self.plot_feedback_gains()
 
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
