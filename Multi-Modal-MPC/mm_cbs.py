@@ -7,11 +7,11 @@ from utils import *
 import scipy.special as sp
 from scipy.stats import multivariate_normal
 import pdb
-from mm_cbs import MM_Node
+from mm_node import MM_Node
 
 class MM_MPC(MPC_Base):
     
-    def _collision_check(self, agent_id):
+    def _collision_check(self, agent_id, rob_sol, obs_id, obs_pred):
         
         
         N_samples = 50
@@ -24,31 +24,45 @@ class MM_MPC(MPC_Base):
         
         eps = 0.01
         
-        uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
-        current_state_obs = uncontrolled_traj[self.num_timestep]
-        gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
-        mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
+        # uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
+        # current_state_obs = uncontrolled_traj[self.num_timestep]
+        # gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
+        # mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
+        
+        current_state_obs = obs_pred[obs_id]['current_state']
+        mode_prob = obs_pred[obs_id]['mode_probs']
+
+        
+        conflicts, resolved = [], []
         time1= time.time()
         for mode in range(self.num_modes):
             obs_mean = (self.obs_affine_model[mode]['T']@current_state_obs[:2]).reshape((-1,1)) + self.obs_affine_model[mode]['c']
-            rob_mean = ca.vec(self.prev_states[agent_id][mode].T)
+            # rob_mean = ca.vec(self.prev_states[agent_id][mode].T)
+            rob_mean = rob_sol["states"][mode]
+            feedback_gains = rob_sol['pol_gains'][mode]
             for sample in range(N_samples):
-                obs_dist = obs_mean + self.obs_affine_model[mode]['E']@N_t[sample,:]
-                
-                rob_dist = rob_mean + self.rob_affine_model[mode]['B']@self.feedback_gains[mode]@(obs_dist[:-2]-obs_mean[:-2])
+                obs_dist = obs_mean + self.obs_affine_model[mode]['E']@N_t[sample,:].reshape((-1,1))
+                pdb.set_trace()
+                rob_dist = rob_mean + self.rob_affine_model[mode]['B']@feedback_gains@(obs_dist[:-2]-obs_mean[:-2])
                 
                 rob_pos_dist = ca.vec(rob_dist.reshape((-1,self.N+1))[:2,:])
         
                 num_collisions[mode]+=np.linalg.norm(rob_pos_dist-obs_dist)<=min_distance*self.N
                 # print(np.linalg.norm(rob_pos_dist-obs_dist))
                 
-            num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode]
+                
+            num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode] #collision probability for mode
+            
+            if num_collisions[mode] > self.delta:
+                conflicts.append([agent_id, obs_id, mode])
+            else:
+                resolved.append([agent_id, obs_id, mode])
+                
             collision_prob+=num_collisions[mode]
             
         time2=time.time()-time1
         
-        print("Collision check time:", time2)
-        return num_collisions   
+        return conflicts, resolved, collision_prob  
                 
                 
         
@@ -434,11 +448,16 @@ class MM_MPC(MPC_Base):
             gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)
 
             mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep] 
-            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0], mode_prob)
+            
+            obs_pred = {0:
+                {'predictions':self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state),
+                 'mode_probs':self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep],
+                 'current_state':current_uncontrolled_state}}
+            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0], mode_prob)
       
             # plt.plot(self._collision_check(0))
             # plt.show()
-            print("Collision Probs:",self._collision_check(0))
+            # print("Collision Probs:",self._collision_check(0))
             # self.plot_feedback_gains()
 
             # Process the results and update the current state
@@ -467,45 +486,49 @@ class MM_MPC(MPC_Base):
             self.num_timestep += 1
             time_2 = time.time()
             self.avg_comp_time.append(time_2-time_1)
-
-        conflicts, resolved = self._collision_check( self.prev_states[agent_id], self.prev_pol[agent_id])
-        
-        node = MM_Node(0, {"states": self.prev_states[agent_id], "controls":self.prev_controls[agent_id], "pol_gains":self.prev_pol[agent_id]},
-                            conflicts,
-                            resolved)   
-
-        tree = [node]
-        # tree[node.node_id]=node
-
-        while True:
-            node = tree.pop()
             
-            conflicts, resolved =   node.conflicts, node.resolved
+            rob_sol ={'states': self.prev_states[agent_id], 'controls': self.prev_controls[agent_id], 'pol_gains':self.prev_pol[agent_id]}
+            conflicts, resolved, collision_prob = self._collision_check(agent_id,  rob_sol, 0, obs_pred)
             
-            if node.is_conflict_free():
-                print("Executed solution is GOOD!")
-                self.max_comp_time = max(self.avg_comp_time)
-                self.avg_comp_time = (sum(self.avg_comp_time) / len(self.avg_comp_time)) / self.num_agent
-                # self.traj_length = get_traj_length(self.state_cache)
-                self.makespan = self.num_timestep * self.dt
-                self.success = True
+            node = MM_Node(0, {"states": self.prev_states[agent_id], "controls":self.prev_controls[agent_id], "pol_gains":self.prev_pol[agent_id]},
+                                conflicts,
+                                resolved)   
+
+            tree = [node]
+            # tree[node.node_id]=node
+
+            while True:
+                node = tree.pop()
                 
-                return node.mm_sol
+                conflicts, resolved =   node.conflicts, node.resolved
+                
+                if node.is_conflict_free():
+                    print("Executed solution is GOOD!")
+                    self.max_comp_time = max(self.avg_comp_time)
+                    self.avg_comp_time = (sum(self.avg_comp_time) / len(self.avg_comp_time)) / self.num_agent
+                    # self.traj_length = get_traj_length(self.state_cache)
+                    self.makespan = self.num_timestep * self.dt
+                    self.success = True
+                    
+                    return node.mm_sol
 
+                
+                self.success = False
+                
+                agent_id, mode, obstacle =  conflicts[-1]
+                
+                MPC_constraints = {agent_id: [(obstacle, mode)]}
+                
+                self.run_single_mpc(agent_id, MPC_constraints)
+                
+                rob_sol ={'states': self.prev_states[agent_id], 'controls': self.prev_controls[agent_id], 'pol_gains':self.prev_pol[agent_id]}
+                new_conflicts, new_resolved, collision_prob = self._collision_check(agent_id, rob_sol, 0, obs_pred)
+                
+                print(f"Collision probs: {collision_prob}")
+                
+                new_node = MM_Node(len(tree), rob_sol, new_conflicts, new_resolved, collision_prob)
+                tree.append(new_node)
             
-            self.success = False
-            
-            agent_id, mode, obstacle =  conflicts[-1]
-            
-            MPC_constraints = {agent_id: [(obstacle, mode)]}
-            
-            self.run_single_mpc(agent_id, MPC_constraints)
-            
-            new_conflicts, new_resolved = self._collision_check(self.prev_states[agent_id], self.prev_pol[agent_id])
-            
-            new_node = MM_Node(len(tree), new_conflicts, new_resolved)
-            tree.append(new_node)
-        
             
             
             
