@@ -11,6 +11,7 @@ from draw import Draw_MPC_point_stabilization_v1
 from collections import OrderedDict
 import seaborn as sns
 from collections import defaultdict
+from matplotlib.animation import FuncAnimation
 
 sns.set_palette("Set1")
 
@@ -332,67 +333,169 @@ def get_obstacle_coordinates(occupancy_grid, current_position):
     
     return obstacle_centers
 
-def calculate_success_rate(folder_path):
-    results = {}  # Dictionary to store the success rates
-
-    # Iterate through each subfolder
+def summarize_results(folder_path):
+    results = {}
     for subfolder in os.listdir(folder_path):
         if os.path.isdir(os.path.join(folder_path, subfolder)):
-            # Extract algorithm and noise level from the subfolder name
             parts = subfolder.split('_')
-            algorithm = parts[0] 
-            noise_level = float(parts[-1])
+            algorithm = parts[0]
+            noise_level = parts[2]
 
-            # Initialize success count and total trials
             infeasible_count = 0
             num_timesteps = 0
+            avg_comp_time = 0
+            max_comp_time = 0
+            control_mag_avg = 0
+            num_trials = 0
 
-            # Load each .pkl file and update success count
             for file in os.listdir(os.path.join(folder_path, subfolder)):
                 if file.endswith('.pkl'):
                     with open(os.path.join(folder_path, subfolder, file), 'rb') as f:
                         data = pickle.load(f)
                         num_timesteps += data['num_timesteps']
                         infeasible_count += data['infeasible_count']
+                        avg_comp_time += np.mean(data['avg_comp_time'])
+                        max_comp_time += np.mean(data['max_comp_time'])
+                        control_mag_avg += np.linalg.norm(data['control_cache'][0][0])
+                        num_trials += 1
 
-            # Calculate success rate
-            infeasible_ratio = infeasible_count/num_timesteps
-   
-            # Store the success rate in the results dictionary
+            # Calculate averages and ratios
+            infeasible_ratio = infeasible_count / num_timesteps 
+            task_completion_time = (num_timesteps / num_trials) * 0.2
+            avg_comp_time = avg_comp_time / num_trials
+            max_comp_time = max_comp_time / num_trials
+            control_mag_avg = control_mag_avg / num_trials
+
+            # Initialize dictionary structure if needed
             if noise_level not in results:
                 results[noise_level] = {}
-            results[noise_level][algorithm] = infeasible_ratio
+            if algorithm not in results[noise_level]:
+                results[noise_level][algorithm] = {}
+
+            # Store metrics in the dictionary
+            results[noise_level][algorithm]['infeasible_ratio'] = infeasible_ratio
+            results[noise_level][algorithm]['task_completion_time'] = task_completion_time
+            results[noise_level][algorithm]['avg_comp_time'] = avg_comp_time
+            results[noise_level][algorithm]['max_comp_time'] = max_comp_time
+            results[noise_level][algorithm]['control_mag_avg'] = control_mag_avg
 
     return results
 
-def plot_success_rates(results):
-    print(results)
-    # Sort the noise levels
-    noise_levels = sorted(results.keys())
+def compute_average_norm(feedback_gain_map):
+    """
+    Computes the average Frobenius norm of an "average" matrix derived from all matrices 
+    across all modes in the provided map.
+    
+    Parameters:
+    - matrix_map: A dictionary where each key is an integer and each value is a list of NumPy arrays.
+    
+    Returns:
+    - The Frobenius norm of the element-wise average of all matrices across all modes.
+    """
+    # Aggregate all matrices into a single list
+    all_matrices = [matrix for matrices in feedback_gain_map.values() for matrix in matrices]
+    
+    # Compute the element-wise average of these matrices
+    average_matrix = np.mean(all_matrices, axis=0)
+    
+    # Compute the Frobenius norm of this "average" matrix
+    average_norm = np.linalg.norm(average_matrix, 'fro')
+    
+    return average_norm
 
-    # Algorithms in order
-    algorithms = ["MM-MPC", "Branch-MPC","Robust-MPC"]
+def plot_results(results):
+    algorithm_order = ["MM-MPC", "Branch-MPC", "Robust-MPC"]
+    data_types = ['infeasible_ratio', 'task_completion_time', 'avg_comp_time', 'max_comp_time', 'control_mag_avg']
+    colors = ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7']
+    titles = ["Infeasible Solve Ratio", "Task Completion Time", "Average Computation Time", "Max Computation Time", "Average Velocity"]
 
-    # Prepare data for plotting
-    data_to_plot = {alg: [] for alg in algorithms}
-    for noise_level in noise_levels:
-        for alg in algorithms:
-            data_to_plot[alg].append(results[noise_level].get(alg, 0))
+    # Sort the noise levels in increasing order and ensure they are unique
+    noise_levels = sorted({float(noise_level) for noise_level in results.keys()})
+    n_groups = len(noise_levels)
+    n_algorithms = len(algorithm_order)
+    bar_width = 0.5 / n_algorithms  # Adjust the width to fit all bars
+    offset = (1 - 0.5) / 2  # Centering offset
 
-    # Plotting
-    x = np.arange(len(noise_levels))  # the label locations
-    width = 0.2  # the width of the bars
+    for i , data_type in enumerate(data_types):
+        fig, ax = plt.subplots()
+        index = np.arange(n_groups)
 
-    fig, ax = plt.subplots()
-    for i, alg in enumerate(algorithms):
-        ax.bar(x + i*width, data_to_plot[alg], width, label=alg)
+        for j, algorithm in enumerate(algorithm_order):
+            # Collect data for this algorithm across all noise levels for the specific data type
+            performance = []
+            for noise_level in noise_levels:
+                if algorithm in results[str(noise_level)]:
+                    performance.append(results[str(noise_level)][algorithm].get(data_type, 0))
+                else:
+                    performance.append(0)
+            bar_positions = index + offset + j * bar_width
+            plt.bar(bar_positions, performance, bar_width, label=algorithm, color=colors[j % len(colors)])
 
-    # Add some text for labels, title, and custom x-axis tick labels, etc.
-    ax.set_xlabel('Prediction uncertainty level')
-    ax.set_ylabel('Ratio of Infeasible Solves')
-    ax.set_title('Ratio of Infeasible Solves')
-    ax.set_xticks(x + width)
-    ax.set_xticklabels(noise_levels)
-    ax.legend()
+        # Configure the plot
+        plt.xlabel('Noise Level')
+        plt.ylabel(data_type.replace('_', ' ').title())
+        plt.title(titles[i])
+        # plt.title(f'{data_type.replace("_", " ").title()}')
+        plt.xticks(index + 0.4, [str(n) for n in noise_levels])
+        plt.legend()
 
+        plt.tight_layout()
+        plt.show()
+
+
+def animate_trial(folder_name, trial_number):
+    # Construct the file path
+    file_path = f"mm_results_0.005/{folder_name}/trial_{trial_number}.pkl"
+        
+    # Load the pickle file
+    with open(file_path, 'rb') as file:
+        data = pickle.load(file)
+    
+    # Extract control_cache and state_cache
+    control_cache = data['control_cache'][0]
+    state_cache = data['state_cache'][0]
+    
+    # Set up the figure and subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    
+    # Initial setup for state plot
+    ax1.set_xlim(-5, 5)
+    ax1.set_ylim(-5, 5)
+    ax1.axvline(x=-1, color='k', linestyle='--', linewidth=2)
+    ax1.axvline(x=1, color='k', linestyle='--', linewidth=2)
+    circle = plt.Circle((0, 0), 0.3, fill=True, color='blue')
+    ax1.add_patch(circle)
+    
+    # Initialize a line to trace the circle's path
+    trajectory, = ax1.plot([], [], 'r-', linewidth=2)
+    trajectory_data = {'x': [], 'y': []}
+
+    # Initial setup for control plot
+    control_line, = ax2.plot([], [], 'k-')  # Initialize an empty line for control values
+    control_data = {'frames': [], 'values': []}  # Initialize the dictionaries to store control plot data
+
+    ax2.set_xlim(0, len(state_cache))  # Assuming frames equal the length of state_cache
+
+    def update(frame):
+        # Update state plot
+        x, y, _ = state_cache[frame]  # Assuming state_cache contains (x, y, theta) tuples
+        circle.center = (x, y)
+        
+        # Update the trajectory data and line
+        trajectory_data['x'].append(x)
+        trajectory_data['y'].append(y)
+        trajectory.set_data(trajectory_data['x'], trajectory_data['y'])
+        
+        # Update control plot data lists
+        control_data['frames'].append(frame)  # Append the current frame number
+        control_data['values'].append(control_cache[frame][0][0])  # Append the current control value
+        
+        # Update control plot
+        control_line.set_data(control_data['frames'], control_data['values'])  # Update the control plot with accumulated data
+        ax2.set_ylim(min(control_data['values']) - 1, max(control_data['values']) + 1)
+        
+        return circle, trajectory, control_line
+   
+    ani = FuncAnimation(fig, update, frames=len(state_cache), interval=100, blit=True, repeat=False)
+    
     plt.show()

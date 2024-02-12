@@ -5,7 +5,7 @@ from visualizer import Visualizer
 import objgraph
 
 class UncontrolledAgent:
-    def __init__(self, init_state, dt=0.2, T=20, H=12, min_action_duration=1.0, num_switches=2, action_variance=None):
+    def __init__(self, init_state, dt=0.2, T=20, H=12, min_action_duration=10.0, num_switches=1, action_variance=None):
         self.init_state = init_state
         self.num_agents = len(init_state)
         self.dt = dt
@@ -16,11 +16,11 @@ class UncontrolledAgent:
         self.num_switches = num_switches
         self.v_mean = 0.3
         self.omega_mean = 0.0
-        self.omega_variance = 0.1 if action_variance is None else action_variance   # Variances for omega corresponding to each action
-        self.v_variance = 0.1 if action_variance is None else action_variance
+        self.omega_variance = 0.01 if action_variance is None else action_variance**2   # Variances for omega corresponding to each action
+        self.v_variance = 0.01 if action_variance is None else action_variance**2
         self.actions = [
-        (np.random.normal(-self.v_mean, self.v_variance), np.random.normal(0.1, 0.0)), 
-        (np.random.normal(self.v_mean, self.v_variance), np.random.normal(0.1, 0.0))]
+        (np.random.normal(self.v_mean, 0.03), np.random.normal(0.0, 0.01)), 
+        (np.random.normal(-self.v_mean, 0.03), np.random.normal(0.0, 0.01))]
         self.action_prob = [0.5, 0.5]
         self.noise_range = [-0.02, 0.02]
         self.prior_likelihood = [0.5, 0.5]
@@ -37,8 +37,8 @@ class UncontrolledAgent:
 
     def generate_actions(self):
         self.actions = [
-        (np.random.normal(-self.v_mean, self.v_variance), np.random.normal(0.0, 0.0)), 
-        (np.random.normal(self.v_mean, self.v_variance), np.random.normal(0.0, 0.0))]
+        (np.random.normal(-self.v_mean, self.v_variance), np.random.normal(0.0, self.omega_variance)), 
+        (np.random.normal(self.v_mean, self.v_variance), np.random.normal(0.0, self.omega_variance))]
 
         return self.actions
     
@@ -70,7 +70,7 @@ class UncontrolledAgent:
 
         for i, action in enumerate(self.actions):
             if action == observed_action:
-                likelihood[i] = 0.8  # Set 80% likelihood for the observed action
+                likelihood[i] = 0.9  # Set 80% likelihood for the observed action
                 break
 
         return likelihood
@@ -106,7 +106,7 @@ class UncontrolledAgent:
                 state_prob = [p / total_prob for p in state_prob]
 
                 self.uncontrolled_fleet_data[agent_id]['mode_probabilities'].append(state_prob)
-
+                
                 for i, (v, omega) in enumerate(self.actions):
                     temp_x, temp_y, temp_theta = x, y, theta
                     traj = []
@@ -156,10 +156,11 @@ class UncontrolledAgent:
     def get_gmm_predictions_from_current(self, current_state):
         gmm_predictions = []
 
-        for agent in range(self.num_agents):
+        for agent_id in range(self.num_agents):
             # Single dictionary for the single agent
             agent_prediction = {}
-            self.generate_actions()
+            # self.generate_actions()
+
             # Calculate the mean and covariance for each action at each timestep within the prediction horizon
             for mode, (v, omega) in enumerate(self.actions):
                 # Initial state
@@ -198,7 +199,7 @@ class UncontrolledAgent:
 
         return gmm_predictions
 
-# initial_states = [(0.0, 1.0, 0.0), (0.0, 2.0, 0.0), (0.0, 3.0, 0.0)]
+# initial_states = [(0.0, 1.0, 0.0), (0.0, 2.0, 0.0)]
 
 # agent = UncontrolledAgent(init_state=initial_states)
 # uncontrolled_fleet_data = agent.simulate_diff_drive()
