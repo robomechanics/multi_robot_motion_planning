@@ -29,7 +29,7 @@ class MetricsLogger:
                 "max_time_reached": [],
                 "infeasible_count": [],
                 "feedback_gain_avg": [],
-                "gmm_pred": [],
+                "uncontrolled_fleet_data": [],
                 "num_timesteps": []
             }
         self.metrics_data[run_description][trial_num]["state_cache"] = state_cache
