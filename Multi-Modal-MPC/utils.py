@@ -445,7 +445,7 @@ def plot_results(results):
 
 def animate_trial(folder_name, trial_number):
     # Construct the file path
-    file_path = f"mm_results_0.005/{folder_name}/trial_{trial_number}.pkl"
+    file_path = f"mm_results/{folder_name}/trial_{trial_number}.pkl"
         
     # Load the pickle file
     with open(file_path, 'rb') as file:

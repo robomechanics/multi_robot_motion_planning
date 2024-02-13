@@ -51,7 +51,7 @@ if __name__ == "__main__":
     # results = summarize_results("mm_results")
     # plot_results(results)
 
-    animate_trial("Robust-MPC_n_0.5", 1)
+    animate_trial("Robust-MPC_n_0.5", 5)
     # for noise_level in noise_levels:
     #     for trial in range(num_trials):
     #         x_unc = random.uniform(-0.1, 0.1) 
