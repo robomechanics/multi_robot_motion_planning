@@ -1,7 +1,7 @@
 import numpy as np
 
 class MM_Node:
-    def __init__(self, node_id:int, mm_sol:dict, conflicts:list, resolved: dict, collision_prob:float=1.0):
+    def __init__(self, node_id:int, mm_sol:dict, conflicts:list, resolved: dict, constraints : dict, collision_prob:float=1.0):
         '''
         mm_sol :  multi-modal trajectories that resolve the conflicts in resolved_conflicts
         resolved: branch id -> List of obstacle mode tuples indicating which obstacles and their modes are resolved
@@ -12,6 +12,7 @@ class MM_Node:
         self.mm_sol = mm_sol
         self.conflicts = conflicts
         self.resolved = resolved
+        self.constraints = constraints
         self.collision_prob = collision_prob
         
     
