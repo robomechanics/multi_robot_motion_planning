@@ -51,14 +51,14 @@ if __name__ == "__main__":
     # results = summarize_results("mm_results")
     # plot_results(results)
 
-    animate_trial("Robust-MPC_n_0.5", 1)
+    animate_trial("MM-MPC_n_0.5", 3)
     # for noise_level in noise_levels:
     #     for trial in range(num_trials):
     #         x_unc = random.uniform(-0.1, 0.1) 
-    #         y_unc = random.uniform(1.5, 2.0)
+    #         y_unc = random.uniform(1.5, 3.0)
 
     #         initial_states = [[random.uniform(-0.2, 0.2), random.uniform(-0.2, 0.2), np.pi/2]]
-    #         final_states = [[random.uniform(-0.2, 0.2), random.uniform(3.5,4.0), np.pi/2]]
+    #         final_states = [[random.uniform(-0.2, 0.2), random.uniform(4.5,5.0), np.pi/2]]
             
     #         rx, ry, ryaw, rk, s = calc_spline_course([initial_states[0][0], final_states[0][0]], [initial_states[0][1], final_states[0][1]])
     #         ref = [[x, y, yaw] for x, y, yaw in zip(rx, ry, ryaw)]

@@ -12,6 +12,7 @@ from collections import OrderedDict
 import seaborn as sns
 from collections import defaultdict
 from matplotlib.animation import FuncAnimation
+from matplotlib.animation import PillowWriter 
 
 sns.set_palette("Set1")
 
@@ -445,16 +446,18 @@ def plot_results(results):
 
 def animate_trial(folder_name, trial_number):
     # Construct the file path
-    file_path = f"mm_results_0.005/{folder_name}/trial_{trial_number}.pkl"
+    file_path = f"mm_results/{folder_name}/trial_{trial_number}.pkl"
         
     # Load the pickle file
     with open(file_path, 'rb') as file:
         data = pickle.load(file)
     
-    # Extract control_cache and state_cache
+    # Extract control_cache, state_cache, uncontrolled_traj, and predictions
     control_cache = data['control_cache'][0]
     state_cache = data['state_cache'][0]
-    
+    uncontrolled_traj = data['uncontrolled_fleet_data'][0]['executed_traj']
+    predictions = data['uncontrolled_fleet_data'][0]['predictions']
+
     # Set up the figure and subplots
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
     
@@ -463,12 +466,20 @@ def animate_trial(folder_name, trial_number):
     ax1.set_ylim(-5, 5)
     ax1.axvline(x=-1, color='k', linestyle='--', linewidth=2)
     ax1.axvline(x=1, color='k', linestyle='--', linewidth=2)
-    circle = plt.Circle((0, 0), 0.3, fill=True, color='blue')
-    ax1.add_patch(circle)
+    controlled_circle = plt.Circle((0, 0), 0.3, fill=True, color='blue', label='Controlled Agent')
+    uncontrolled_circle = plt.Circle((0, 0), 0.3, fill=True, color='red', label='Uncontrolled Agent')
+    ax1.add_patch(controlled_circle)
+    ax1.add_patch(uncontrolled_circle)
     
     # Initialize a line to trace the circle's path
     trajectory, = ax1.plot([], [], 'r-', linewidth=2)
     trajectory_data = {'x': [], 'y': []}
+
+    # Predictions visualization setup
+    prediction_lines = []
+    for mode in range(len(predictions)):
+        line, = ax1.plot([], [], 'g', linewidth=2)  # Green dashed line for predictions
+        prediction_lines.append(line)
 
     # Initial setup for control plot
     control_line, = ax2.plot([], [], 'k-')  # Initialize an empty line for control values
@@ -477,15 +488,25 @@ def animate_trial(folder_name, trial_number):
     ax2.set_xlim(0, len(state_cache))  # Assuming frames equal the length of state_cache
 
     def update(frame):
-        # Update state plot
+        # Update state plot for controlled agent
         x, y, _ = state_cache[frame]  # Assuming state_cache contains (x, y, theta) tuples
-        circle.center = (x, y)
+        controlled_circle.center = (x, y)
         
         # Update the trajectory data and line
         trajectory_data['x'].append(x)
         trajectory_data['y'].append(y)
         trajectory.set_data(trajectory_data['x'], trajectory_data['y'])
-        
+
+        # Update state plot for uncontrolled agent
+        ux, uy, _ = uncontrolled_traj[frame]
+        uncontrolled_circle.center = (ux, uy)
+
+        # Update predictions
+        for mode, line in enumerate(prediction_lines):
+            mode_predictions = predictions[mode][frame]  # Get predictions for the current frame and mode
+            px, py = zip(*[(pred[0], pred[1]) for pred in mode_predictions])  # Extract x, y coordinates
+            line.set_data(px, py)
+
         # Update control plot data lists
         control_data['frames'].append(frame)  # Append the current frame number
         control_data['values'].append(control_cache[frame][0][0])  # Append the current control value
@@ -494,8 +515,20 @@ def animate_trial(folder_name, trial_number):
         control_line.set_data(control_data['frames'], control_data['values'])  # Update the control plot with accumulated data
         ax2.set_ylim(min(control_data['values']) - 1, max(control_data['values']) + 1)
         
-        return circle, trajectory, control_line
+        return [controlled_circle, uncontrolled_circle, trajectory, control_line] + prediction_lines
    
     ani = FuncAnimation(fig, update, frames=len(state_cache), interval=100, blit=True, repeat=False)
     
+    plt.legend(loc="upper left")
+    plt.show()
+
+    # Specify the writer and options (FFmpeg is a common choice, but you might need to adjust based on your system)
+    
+    # Specify the filename and path where you want to save the animation
+    animation_file_name = f"trial_{trial_number}_animation.gif"
+    
+    # Save the animation
+    writer = PillowWriter(fps=30)  # Adjust fps as needed
+    ani.save(animation_file_name, writer=writer)   
+   
     plt.show()
