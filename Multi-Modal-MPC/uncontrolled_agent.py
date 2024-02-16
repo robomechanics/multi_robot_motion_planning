@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from visualizer import Visualizer
-import objgraph
 
 class UncontrolledAgent:
     def __init__(self, init_state, dt=0.2, T=20, H=12, min_action_duration=10.0, num_switches=1, action_variance=None):

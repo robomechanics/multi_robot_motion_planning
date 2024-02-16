@@ -356,7 +356,7 @@ class MM_MPC(MPC_Base):
         return u_res, next_states_pred
     
     def simulate(self):
-        # self.setup_visualization()
+        self.setup_visualization()
         # self.setup_visualization_heatmap()
         
         # parallelized implementation
@@ -396,7 +396,7 @@ class MM_MPC(MPC_Base):
             gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)
 
             mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep] 
-            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0], mode_prob, ref=self.ref)
+            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0], mode_prob, ref=self.ref)
             # self.plot_feedback_gains()
 
             # Process the results and update the current state
