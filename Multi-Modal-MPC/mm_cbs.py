@@ -9,30 +9,19 @@ from scipy.stats import multivariate_normal
 import pdb
 from mm_node import MM_Node
 
-class MM_MPC(MPC_Base):
+class MM_CBS(MPC_Base):
     
     def _collision_check(self, agent_id, rob_sol, obs_id, obs_pred):
-        
-        
         N_samples = 50
-        
         N_t = multivariate_normal.rvs(np.zeros(self.N), np.eye(self.N), N_samples)
         
         collision_prob = 0.
         num_collisions = [0 for _ in range(self.num_modes)]
         min_distance = self.rob_dia*2+0.5
-        
-        eps = 0.01
-        
-        # uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
-        # current_state_obs = uncontrolled_traj[self.num_timestep]
-        # gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
-        # mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
-        
+                
         current_state_obs = obs_pred[obs_id]['current_state']
         mode_prob = obs_pred[obs_id]['mode_probs']
 
-        
         conflicts, resolved = [], []
         time1= time.time()
         for mode in range(self.num_modes):
@@ -50,7 +39,6 @@ class MM_MPC(MPC_Base):
                 num_collisions[mode]+=np.linalg.norm(rob_pos_dist-obs_dist)<=min_distance*self.N
                 # print(np.linalg.norm(rob_pos_dist-obs_dist))
                 
-                
             num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode] #collision probability for mode
             
             if num_collisions[mode] > self.delta:
@@ -64,13 +52,6 @@ class MM_MPC(MPC_Base):
         
         return conflicts, resolved, collision_prob  
                 
-                
-        
-        
-        
-        
-    
-    
     def _get_robot_ATV_dynamics(self, current_state, x_lin=None, u_lin=None):
         """
         Constructs system matrices such for the robot,
@@ -202,8 +183,6 @@ class MM_MPC(MPC_Base):
                 A, B, C, E = self._get_robot_ATV_dynamics(current_state, self.prev_states[agent_id][j], self.prev_controls[agent_id][j])       
             else:
                 A, B, C, E = self._get_robot_ATV_dynamics(current_state)
-                
-                
 
             A_rob.append(A); B_rob.append(B); C_rob.append(C); E_rob.append(E)
 
@@ -383,7 +362,6 @@ class MM_MPC(MPC_Base):
             sol = opti.solve()
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
-
             
             for mode in range(self.num_modes):
                 self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
@@ -405,7 +383,6 @@ class MM_MPC(MPC_Base):
                     next_states_pred[j].append(self.model.fCd(next_states_pred[j][-1], u_res[j][t,:]).T)
                 next_states_pred[j] = ca.vertcat(*next_states_pred[j])
             # eps_o = sol.value(opt_epsilon_o)
-            
             
             self.prev_states[agent_id] = next_states_pred
             self.prev_controls[agent_id] = u_res

@@ -38,7 +38,7 @@ class MPC_Base:
 
         self.state_cache = {agent_id: [] for agent_id in range(self.num_agent)}
         self.prediction_cache = {agent_id: np.empty((3, self.N+1)) for agent_id in range(self.num_agent)}
-        self.control_cache = {agent_id: np.empty((2, self.N)) for agent_id in range(self.num_agent)}
+        self.control_cache = {agent_id: [] for agent_id in range(self.num_agent)}
 
         # variables holding previous solutions
         self.prev_states = {agent_id: np.zeros((self.N+1, 3)) for agent_id in range(self.num_agent)}
@@ -47,10 +47,13 @@ class MPC_Base:
         self.prev_epsilon_r = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
         
         self.feedback_gains = {mode_id: np.zeros((2*self.N, 2*self.N)) for mode_id in range(self.num_modes)}
+        self.feedback_gains_cache = {mode_id: [] for mode_id in range(self.num_modes)}
         self.heatmaps = []
         self.current_state = {}
         for i in range(self.num_agent):
             self.current_state[i] = self.initial_state[i]
+
+        self.n_obs=len(self.uncontrolled_fleet_data)
 
         self.obs = obs
         self.dyn_obs = obs["dynamic"]
@@ -76,6 +79,7 @@ class MPC_Base:
         self.makespan = 0.0
         self.avg_rob_dist = 0.0
         self.c_avg = []
+        self.feedback_gain_avg = 0.0
         self.success = False
 
         self.logger = MetricsLogger()
@@ -164,13 +168,12 @@ class MPC_Base:
         else: 
             return True
         
-    def find_closest_waypoint(self, waypoints, state):
+    def find_closest_waypoint(self, state):
         closest_distance = math.inf
         closest_index = None
-
-        for i, waypoint in enumerate(waypoints):
-            x_diff = waypoint['x'] - state[0]
-            y_diff = waypoint['y'] - state[1]
+        for i, waypoint in enumerate(self.ref):
+            x_diff = waypoint[0] - state[0]
+            y_diff = waypoint[1] - state[1]
             distance = math.sqrt(x_diff**2 + y_diff**2)
 
             if distance < closest_distance:
@@ -180,27 +183,26 @@ class MPC_Base:
         return closest_index
 
     def extract_trajectory_segment(self, current_state):
-        segment_dict = {}
+        segment_dict = []
 
-        for robot_id, waypoints in self.ref.items():
-            closest_index = self.find_closest_waypoint(waypoints, current_state)
+        closest_index = self.find_closest_waypoint(current_state)
 
-            if closest_index is not None:
-                segment_waypoints = []
-                waypoints_len = len(waypoints)
+        if closest_index is not None:
+            segment_waypoints = []
+            waypoints_len = len(self.ref)
 
-                for i in range(closest_index, waypoints_len):
-                    waypoint = waypoints[i]
-                    segment_waypoints.append(waypoint)
+            for i in range(closest_index, waypoints_len):
+                waypoint = self.ref[i]
+                segment_waypoints.append(waypoint)
 
-                    if len(segment_waypoints) >= self.N:
-                        break
+                if len(segment_waypoints) >= self.N:
+                    break
 
-                last_waypoint = segment_waypoints[-1]
-                while len(segment_waypoints) < self.N:
-                    segment_waypoints.append(last_waypoint)
+            last_waypoint = segment_waypoints[-1]
+            while len(segment_waypoints) < self.N:
+                segment_waypoints.append(last_waypoint)
 
-                segment_dict[robot_id] = segment_waypoints
+            segment_dict.append(segment_waypoints)
 
         return segment_dict
 
@@ -223,25 +225,28 @@ class MPC_Base:
 
         plt.ion()  # Turn on interactive mode
 
-    def plot_gmm_means_and_state(self, current_state, current_prediction, gmm_data=None, mode_prob=None):
+    def plot_gmm_means_and_state(self, current_state, current_prediction, gmm_data=None, mode_prob=None, ref=None):
         self.ax.clear()  # Clear the main axes
         self.ax_prob.clear()  # Clear the mode probability axes
+        self.ax.axvline(x=-1, color='k', linestyle='--')
+        self.ax.axvline(x=1, color='k', linestyle='--')
 
         # Set the title and labels for the main plot
         self.ax.set_xlim(-4, 4)
         self.ax.set_ylim(-4, 4)
 
         # Plotting the GMM predictions as scattered points
-        colors = plt.cm.get_cmap('hsv', len(gmm_data)+1)
-        for mode, data in enumerate(gmm_data.values(), start=0):
-            means = np.array(data['means'])
-            cov = np.array(data['covariances'])
-            for mean, cov_matrix in zip(means, cov):
-                # Assume the covariance matrix is 2x2 and compute the radius for the circle
-                # Here, we're taking the average of the variances for simplicity
-                radius = np.sqrt((cov_matrix[0, 0] + cov_matrix[1, 1]) / 2)
-                circle = plt.Circle((mean[0], mean[1]), radius, color=colors(mode), alpha=0.2)
-                self.ax.add_patch(circle)
+        colors = plt.cm.get_cmap('hsv', self.n_obs*self.num_modes+1)
+        for agent_pred in gmm_data:
+            for mode, data in enumerate(agent_pred.values(), start=0):
+                means = np.array(data['means'])
+                cov = np.array(data['covariances'])
+                for mean, cov_matrix in zip(means, cov):
+                    # Assume the covariance matrix is 2x2 and compute the radius for the circle
+                    # Here, we're taking the average of the variances for simplicity
+                    radius = np.sqrt((cov_matrix[0, 0] + cov_matrix[1, 1]) / 2)
+                    circle = plt.Circle((mean[0], mean[1]), radius, color=colors(mode), alpha=0.2)
+                    self.ax.add_patch(circle)
 
         # Plotting predictions
         if(isinstance(current_prediction, list)):
@@ -262,9 +267,13 @@ class MPC_Base:
         # Plotting the mode probabilities as a bar chart
         if mode_prob is not None:
             modes = range(len(mode_prob))
-            self.ax_prob.bar(modes, mode_prob, color='green', alpha=0.6)
-            self.ax_prob.set_ylim(0, 1)  # Assuming probabilities are between 0 and 1
+            mode_labels = [f"Mode {i+1}" for i in modes]  # Create labels for each mode
+            bar_colors = [colors(i) for i in modes]  # Use the same color scheme as for the circles
+            bars = self.ax_prob.bar(modes, mode_prob, color=bar_colors, alpha=0.6)
+            self.ax_prob.set_ylim(0, 1)
             self.ax_prob.set_ylabel('Mode Probabilities')
+            self.ax_prob.set_xticks(modes)  # Set the x-ticks to be at the modes
+            self.ax_prob.set_xticklabels(mode_labels)  # Label the x-ticks
 
         plt.draw()
         plt.pause(0.05)
@@ -292,7 +301,6 @@ class MPC_Base:
         self.fig.tight_layout()  # Adjust the layout
         plt.draw()
         plt.pause(0.05)  # Pause for a brief moment
-
 
     def simulate(self):
         raise NotImplementedError("Subclasses must implement the functionality")

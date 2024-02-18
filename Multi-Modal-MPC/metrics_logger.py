@@ -7,13 +7,14 @@ class MetricsLogger:
     def __init__(self):
         self.metrics_data = {}
 
-    def log_metrics(self, run_description, trial_num, state_cache, map, initial_state, final_state, avg_comp_time, max_comp_time, traj_length, makespan, avg_rob_dist, c_avg, success, execution_collision, max_time_reached, infeasible_count, num_timesteps):
+    def log_metrics(self, run_description, trial_num, state_cache, control_cache, map, initial_state, final_state, avg_comp_time, max_comp_time, traj_length, makespan, avg_rob_dist, c_avg, success, execution_collision, max_time_reached, infeasible_count, feedback_gain_avg, uncontrolled_fleet_data, num_timesteps):
         # Log the metrics for a specific algorithm trial
         if run_description not in self.metrics_data:
             self.metrics_data[run_description] = {}
         if trial_num not in self.metrics_data[run_description]:
             self.metrics_data[run_description][trial_num] = {
                 "state_cache": {},
+                "control_cache": {},
                 "initial_state": [],
                 "final_state": [],
                 "map": [],
@@ -27,9 +28,12 @@ class MetricsLogger:
                 "execution_collision": [],
                 "max_time_reached": [],
                 "infeasible_count": [],
+                "feedback_gain_avg": [],
+                "uncontrolled_fleet_data": [],
                 "num_timesteps": []
             }
         self.metrics_data[run_description][trial_num]["state_cache"] = state_cache
+        self.metrics_data[run_description][trial_num]["control_cache"] = control_cache
         self.metrics_data[run_description][trial_num]["initial_state"] = initial_state
         self.metrics_data[run_description][trial_num]["final_state"] = final_state
         self.metrics_data[run_description][trial_num]["map"] = map
@@ -43,6 +47,8 @@ class MetricsLogger:
         self.metrics_data[run_description][trial_num]["execution_collision"] = execution_collision
         self.metrics_data[run_description][trial_num]["max_time_reached"] = max_time_reached
         self.metrics_data[run_description][trial_num]["infeasible_count"] = infeasible_count
+        self.metrics_data[run_description][trial_num]["feedback_gain_avg"] = feedback_gain_avg
+        self.metrics_data[run_description][trial_num]["uncontrolled_fleet_data"] = uncontrolled_fleet_data
         self.metrics_data[run_description][trial_num]["num_timesteps"] = num_timesteps
 
     def print_metrics_summary(self):
@@ -69,10 +75,8 @@ class MetricsLogger:
                     print(traj_length)
                     print("Makespan:")
                     print(makespan)
-                    print("Avg Rob Distance:")
-                    print(avg_rob_dist)
-                    print("C_avg:")
-                    print(c_avg)
+                    print("Infeasible_count:")
+                    print(infeasible_count)
                     print("Success:")
                     print(bool(success))
                     print("===================")
