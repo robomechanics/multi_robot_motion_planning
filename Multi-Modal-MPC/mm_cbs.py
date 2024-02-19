@@ -8,20 +8,32 @@ import scipy.special as sp
 from scipy.stats import multivariate_normal
 import pdb
 from mm_node import MM_Node
+from itertools import product
 
 class MM_CBS(MPC_Base):
     
     def _collision_check(self, agent_id, rob_sol, obs_id, obs_pred):
+        
+        
         N_samples = 50
+        
         N_t = multivariate_normal.rvs(np.zeros(self.N), np.eye(self.N), N_samples)
         
         collision_prob = 0.
         num_collisions = [0 for _ in range(self.num_modes)]
         min_distance = self.rob_dia*2+0.5
-                
+        
+        eps = 0.01
+        
+        # uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
+        # current_state_obs = uncontrolled_traj[self.num_timestep]
+        # gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
+        # mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
+        
         current_state_obs = obs_pred[obs_id]['current_state']
         mode_prob = obs_pred[obs_id]['mode_probs']
 
+        
         conflicts, resolved = [], []
         time1= time.time()
         for mode in range(self.num_modes):
@@ -39,6 +51,7 @@ class MM_CBS(MPC_Base):
                 num_collisions[mode]+=np.linalg.norm(rob_pos_dist-obs_dist)<=min_distance*self.N
                 # print(np.linalg.norm(rob_pos_dist-obs_dist))
                 
+                
             num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode] #collision probability for mode
             
             if num_collisions[mode] > self.delta:
@@ -51,6 +64,8 @@ class MM_CBS(MPC_Base):
         time2=time.time()-time1
         
         return conflicts, resolved, collision_prob  
+                
+                
     
     def _get_robot_ATV_dynamics(self, current_state, x_lin=None, u_lin=None):
         """
@@ -153,7 +168,7 @@ class MM_CBS(MPC_Base):
 
     def run_single_mpc(self, agent_id, current_state, constraints, linearized_ca = False):
         '''
-        constraints = [(obs_i, 1), (obs_i, 2), (obs_j, 0), (obs_j, 3), (obs_k, 0)] (as an eg.)
+        constraints = [(obs_i, 1, 'new'), (obs_i, 2, 'old'), (obs_j, 0), (obs_j, 3), (obs_k, 0)] (as an eg.)
         
         '''
         # casadi parameters
@@ -187,7 +202,8 @@ class MM_CBS(MPC_Base):
         rob_horizon_u = opti.variable(self.robust_horizon, 2)
         
         opt_controls = {obs_idx: [ca.vertcat(rob_horizon_u, opti.variable(self.N-self.robust_horizon,2)) for _ in range(n_modes[obs_idx])] for obs_idx in obs_set}
-        opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(len(constraints))]
+        # opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(len(constraints))]
+        opt_epsilon_r = {obs_idx: [opti.variable(self.N,1) for _ in range(n_modes[obs_idx])] for obs_idx in obs_set}
 
         A_rob, B_rob, C_rob, E_rob = [], [], [], []
         opt_states, opt_x, opt_y, v, omega = [], [], [], [], []
@@ -198,6 +214,7 @@ class MM_CBS(MPC_Base):
             
             for control in mm_controls:
                 A_rob.append(A); B_rob.append(B); C_rob.append(C); E_rob.append(E)
+
                 # nominal state predictions
                 opt_states.append(ca.vec(A@ca.DM(current_state)+B@ca.vec(control.T)+C).reshape((-1,self.N+1)).T)
 
@@ -317,124 +334,42 @@ class MM_CBS(MPC_Base):
         for obs_idx, modes in n_modes.items():
             for j in modes:
                 prediction = self.gmm_prediction[obs_idx][j]
+                opti.subject_to(opti.bounded(0, opt_epsilon_r[obs_idx][j][:], 0.001))
                 for t in range(1,self.N):
-                    if self.linearized_ca:
-                        ## Prob(||(tv_pos + tv_noise - opt_state- noise_correction)||_2^2 >= 4*self.rob^2_dia) >= 1-epsilon
-                        ## g(o,p) = || o -p |||^2,   l(o,p) = g(o_0, p_0) +  dg_p(p-p_0) + dg_o (o-o_0)
+                        
+                    obs_pos   = ca.DM(prediction['means'][t-1][:2])
+                    
+                    ref_pos = ca.DM(current_state)[:2]
+                    rob_proj = obs_pos+2*self.rob_dia*(ref_pos-obs_pos)/ca.norm_2(ref_pos-obs_pos)
+                    
+                
+                    
+                    # other_obs_constraints = {obs_i:[0,1], obs_k:[2,1]}
+                    #  robot _policy = h[0][j_0] + K[0][j_0]*(o0[j_0] -E[o0|j_0]) + h[1][j_1]+K[1][j_1]*(o1[j_1]-E[o1|j_1])
+                    
+                    # Collision_avoidance for o0 in j_0 :   ||Ax+B*policy  - o0[j0]|| > d_min   for all  modes of o1: [j_1, j'_1,......] (MM-mpc) / for all modes of o1 in constraints (MM_CBS)
+                    
+                    other_obs_modes = {o_idx: m for o_idx, m in n_modes.items() if o_idx!=obs_idx}
+                    
+                    obs_mode_combinations = list(product(j,*[other_obs_modes[obs] for obs in other_obs_modes.keys()]))
+                    obs_list = [obs_idx]+list(other_obs_modes.keys())
+                    for combination in obs_mode_combinations:
+                        #combination = [j, one mode each of other obstacles in constraints list]
+                        _2_norm_coeff =2*sp.erfinv(1-2*self.delta)*(rob_proj-obs_pos).T
+                        rv_dist  =_2_norm_coeff@ca.horzcat(E_rob[0][t*3:(t+1)*3-1,:],                                                        
+                                                            *[B_rob[0][t*3:(t+1)*3-1,:]@pol_gains[l][combination[i]]@E_obs[l][combination[i]][:-2,:]-int(l==obs_idx)*E_obs[obs_idx][j][t*2:(t+1)*2,:] for i,l in enumerate(obs_list)])
 
-                        ## Linearization procedure: Project current_state (of robot) onto a sphere of radius rob_dia, and centered at tv_pos.
-
-                        #### Linearized constraint :  
-                        ##   rob_dia^2 +  2*(tv_pos - curr_state)@(opt_state+noise_correction - curr_state) - 2*(tv_pos - curr_state)@(tv_pos+tv_noise - tv_pos) > = rob_dia^2
-                        ##  ==>   (tv_pos - curr_state)@(opt_state+noise_correction - curr_state - tv_noise) > =0
-
-                        #### New chance constraint : 
-                        ## Prob ( (tv_pos - curr_state)@(opt_state+noise_correction - curr_state - tv_noise) > =0 ) >= 1-eps
-                        ##  ==>  Prob((tv_pos - curr_state)@(noise_correction -tv_noise) >= -(tv_pos - curr_state)@(opt_state-curr_state)  ) >=1-eps
-                        ##  ==>  sp.erfinv(1-eps)*||(tv_pos-curr_state)@(noise_covar + tv_covar)|| >=  -(tv_pos - curr_state)@(opt_state-curr_state)
-                        
-                        ## opt_state[k, :]+noise_correction[k] = A_rob[k, :]@curr_state + B_rob[k,:]@opt_controls+  + C_rob +     B_rob[k,:]@K_stack[k][j]@(O_stack[j]- E[O_stack[j]]) + E_rob@W_t
-                        ## noise_correction[k]   =  B_rob[k,:]@K_stack[k][j]@E_obs[k][j]@N_t + E_rob@W_t
-                        
-                        obs_pos   = ca.DM(prediction['means'][t-1][:2])
-                        
-                        
-                        # if type(self.prev_states[agent_id])==type([]):
-                        #     ref_pos = self.prev_states[agent_id][j][t,:2].T
-                        # else:
-                        ref_pos = ca.DM(current_state)[:2]
-
-                        rob_proj = obs_pos+2*self.rob_dia*(ref_pos-obs_pos)/ca.norm_2(ref_pos-obs_pos)
-                        
-                         # robot trajectory = Ax + B(sum_over_obs h[i][j_i] + K[i][j_i] obs[i][j_i]}) + noise
-                         
-                         # Which branch to pick to impoea constraint for obs k in mode j?
-                         # i.e. ||robot_pos[branch_id] - obs_pos[k][j]||> d_min -----  which branch id? All branches that involve obs_k in mode j?
-                        rv_dist  =2*sp.erfinv(1-2*self.delta)*(rob_proj-tv_pos).T@\
-                                     ca.horzcat(E_rob[0][t*3:(t+1)*3-1,:],*[B_rob[0][t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][:-2,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(n_obs)])
-                        
-                        nom_dist = (rob_proj-tv_pos).T@(opt_states[j][t,:2].T-rob_proj)
+                        robot_ff_control = ca.sum2(ca.horzcat(*[ca.vec(opt_controls[l][combination[i]]) for i,l in enumerate(obs_list)]))
+                        nom_robot_state = ca.vec(A_rob[0]@ca.DM(current_state)+B_rob[0]@ca.vec(robot_ff_control.T)+C).reshape((-1,self.N+1)).T
+                        nom_dist = (rob_proj-obs_pos).T@(nom_robot_state[t,:2].T-rob_proj)
 
                         opti.subject_to(rv_dist@rv_dist.T<=(opt_epsilon_r[j][t-1]+nom_dist)**2)
-                        opti.subject_to(nom_dist>=-opt_epsilon_r[j][t-1])
-                    else:
-                        tv_pos   = ca.DM(prediction['means'][t-1][:2])
-                        ##### Get chance constraints from the given GMM prediction
-                        ## aij =(pi + Eini - pj- Ejnj)  and bij = ri + rj 
-                        ##     P[ aij^T@aij <= bij**2 ]< eps  
-                        ## <==>P[([ni;nj].T M[ni;nj] - Tr([I -I].T@[I -I]) <= -((pi-pj)^T@(pi-pj)+Tr(M)-bij**2)] < eps     
-                        ##  ==> Var([ni;nj].T M[ni;nj]) < =eps*{Var([ni;nj].T M[ni;nj]) +  ( (pi-pj)^T@(pi-pj) + Tr(M)  -bij**2)**2)          
-                        ###    Last inequality by Cantelli's : https://en.wikipedia.org/wiki/Cantelli%27s_inequality) 
-                        pi = ca.vec(opt_states[j][t,:2])
-                        pj = ca.vec(tv_pos)
-
-                        joint_rv = ca.horzcat(E_rob[j][t*3:(t+1)*3-1,:],*[B_rob[j][t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][:-2,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(n_obs)])
-                        joint_cov = joint_rv.T@joint_rv
-
-                        tr_M_ = ca.trace(joint_cov)
-                        lmbd_ = (pi-pj).T@(pi-pj) + tr_M_ - 4*self.rob_dia**2
-                        Var_  = 2*ca.trace(joint_cov@joint_cov)
-
-                        rob_rob_constraint = self.delta*(Var_ + lmbd_**2) - Var_
-                        opti.subject_to(rob_rob_constraint >= -opt_epsilon_r[j][t-1])
-            
-        
-
-        # for k, agent_prediction in enumerate(gmm_predictions):
-        #     for j, prediction in agent_prediction.items():
-        #         for t in range(1,self.N):
-        #             if self.linearized_ca:
-        #                 ## Prob(||(tv_pos + tv_noise - opt_state- noise_correction)||_2^2 >= 4*self.rob^2_dia) >= 1-epsilon
-        #                 ## g(o,p) = || o -p |||^2,   l(o,p) = g(o_0, p_0) +  dg_p(p-p_0) + dg_o (o-o_0)
-
-        #                 ## Linearization procedure: Project current_state (of robot) onto a sphere of radius rob_dia, and centered at tv_pos.
-
-        #                 #### Linearized constraint :  
-        #                 ##   rob_dia^2 +  2*(tv_pos - curr_state)@(opt_state+noise_correction - curr_state) - 2*(tv_pos - curr_state)@(tv_pos+tv_noise - tv_pos) > = rob_dia^2
-        #                 ##  ==>   (tv_pos - curr_state)@(opt_state+noise_correction - curr_state - tv_noise) > =0
-
-        #                 #### New chance constraint : 
-        #                 ## Prob ( (tv_pos - curr_state)@(opt_state+noise_correction - curr_state - tv_noise) > =0 ) >= 1-eps
-        #                 ##  ==>  Prob((tv_pos - curr_state)@(noise_correction -tv_noise) >= -(tv_pos - curr_state)@(opt_state-curr_state)  ) >=1-eps
-        #                 ##  ==>  sp.erfinv(1-eps)*||(tv_pos-curr_state)@(noise_covar + tv_covar)|| >=  -(tv_pos - curr_state)@(opt_state-curr_state)
+                        opti.subject_to(nom_dist>=-opt_epsilon_r[obs_idx][j][t-1])
                         
-        #                 ## opt_state[k, :]+noise_correction[k] = A_rob[k, :]@curr_state + B_rob[k,:]@opt_controls+  + C_rob +     B_rob[k,:]@K_stack[k][j]@(O_stack[j]- E[O_stack[j]]) + E_rob@W_t
-        #                 ## noise_correction[k]   =  B_rob[k,:]@K_stack[k][j]@E_obs[k][j]@N_t + E_rob@W_t
                         
-        #                 tv_pos   = ca.DM(prediction['means'][t-1][:2])
-        #                 if type(self.prev_states[agent_id])==type([]):
-        #                     ref_pos = self.prev_states[agent_id][j][t,:2].T
-        #                 else:
-        #                     ref_pos = ca.DM(current_state)[:2]
-
-        #                 rob_proj = tv_pos+2*self.rob_dia*(ref_pos-tv_pos)/ca.norm_2(ref_pos-tv_pos)
-                        
-        #                 rv_dist  = sp.erfinv(1-2*self.delta)*(rob_proj-tv_pos).T@(2*ca.horzcat(E_rob[j][t*3:(t+1)*3-1,:],*[B_rob[j][t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][:-2,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(n_obs)]))
-                        
-        #                 nom_dist = (rob_proj-tv_pos).T@(opt_states[j][t,:2].T-rob_proj)
-
-        #                 opti.subject_to(rv_dist@rv_dist.T<=(opt_epsilon_r[j][t-1]+nom_dist)**2)
-        #                 opti.subject_to(nom_dist>=-opt_epsilon_r[j][t-1])
-        #             else:
-        #                 tv_pos   = ca.DM(prediction['means'][t-1][:2])
-        #                 ##### Get chance constraints from the given GMM prediction
-        #                 ## aij =(pi + Eini - pj- Ejnj)  and bij = ri + rj 
-        #                 ##     P[ aij^T@aij <= bij**2 ]< eps  
-        #                 ## <==>P[([ni;nj].T M[ni;nj] - Tr([I -I].T@[I -I]) <= -((pi-pj)^T@(pi-pj)+Tr(M)-bij**2)] < eps     
-        #                 ##  ==> Var([ni;nj].T M[ni;nj]) < =eps*{Var([ni;nj].T M[ni;nj]) +  ( (pi-pj)^T@(pi-pj) + Tr(M)  -bij**2)**2)          
-        #                 ###    Last inequality by Cantelli's : https://en.wikipedia.org/wiki/Cantelli%27s_inequality) 
-        #                 pi = ca.vec(opt_states[j][t,:2])
-        #                 pj = ca.vec(tv_pos)
-
-        #                 joint_rv = ca.horzcat(E_rob[j][t*3:(t+1)*3-1,:],*[B_rob[j][t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][:-2,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(n_obs)])
-        #                 joint_cov = joint_rv.T@joint_rv
-
-        #                 tr_M_ = ca.trace(joint_cov)
-        #                 lmbd_ = (pi-pj).T@(pi-pj) + tr_M_ - 4*self.rob_dia**2
-        #                 Var_  = 2*ca.trace(joint_cov@joint_cov)
-
-        #                 rob_rob_constraint = self.delta*(Var_ + lmbd_**2) - Var_
-        #                 opti.subject_to(rob_rob_constraint >= -opt_epsilon_r[j][t-1])
+                        # For Gurobi   
+                        # opti.subject_to(ca.soc(rv_dist, nom_dist+opt_epsilon_r[obs_idx][j][t-1])>=0)
+                            
 
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
                             'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
@@ -460,6 +395,7 @@ class MM_CBS(MPC_Base):
             sol = opti.solve()
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
+
             
             for mode in range(self.num_modes):
                 self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
@@ -481,6 +417,7 @@ class MM_CBS(MPC_Base):
                     next_states_pred[j].append(self.model.fCd(next_states_pred[j][-1], u_res[j][t,:]).T)
                 next_states_pred[j] = ca.vertcat(*next_states_pred[j])
             # eps_o = sol.value(opt_epsilon_o)
+            
             
             self.prev_states[agent_id] = next_states_pred
             self.prev_controls[agent_id] = u_res
