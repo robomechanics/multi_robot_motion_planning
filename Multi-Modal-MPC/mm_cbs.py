@@ -36,13 +36,14 @@ class MM_CBS(MPC_Base):
         
         conflicts, resolved = [], []
         time1= time.time()
+    
         for mode in range(self.num_modes):
-            obs_mean = (self.obs_affine_model[mode]['T']@current_state_obs[:2]).reshape((-1,1)) + self.obs_affine_model[mode]['c']
+            obs_mean = (self.obs_affine_model[obs_id][mode]['T']@current_state_obs[:2]).reshape((-1,1)) + self.obs_affine_model[obs_id][mode]['c']
             # rob_mean = ca.vec(self.prev_states[agent_id][mode].T)
             rob_mean = ca.vec(rob_sol["states"][mode].T)
             feedback_gains = rob_sol['pol_gains'][mode]
             for sample in range(N_samples):
-                obs_dist = obs_mean + self.obs_affine_model[mode]['E']@N_t[sample,:].reshape((-1,1))
+                obs_dist = obs_mean + self.obs_affine_model[obs_id][mode]['E']@N_t[sample,:].reshape((-1,1))
       
                 rob_dist = rob_mean + self.rob_affine_model['B'].toarray()@feedback_gains@(obs_dist[:-2]-obs_mean[:-2])
                 
@@ -177,12 +178,12 @@ class MM_CBS(MPC_Base):
         # opt_states = opti.variable(self.N + 1, 3)
         # opt_x = opt_states[:,0]
         # opt_y = opt_states[:,1]
-        uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
-        current_state_obs = uncontrolled_traj[self.num_timestep]
-        gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
-        noise_chars      = self.uncontrolled_fleet.get_gmm_predictions()
-        n_modes = len(gmm_predictions[0])
-        n_obs=len(gmm_predictions)
+        # uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
+        # current_state_obs = uncontrolled_traj[self.num_timestep]
+        # gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
+        # noise_chars      = self.uncontrolled_fleet.get_gmm_predictions()
+        # n_modes = len(gmm_predictions[0])
+        # n_obs=len(gmm_predictions)
         
         obs_set = set(c[0] for c in constraints)
         n_obs = len(obs_set)
@@ -202,30 +203,43 @@ class MM_CBS(MPC_Base):
         u_ff = opti.variable(self.N, 2)
         
         
-        opt_controls = {obs_idx: [u_ff+ca.vertcat(ca.DM(self.robust_horizon,2), opti.variable(self.N-self.robust_horizon,2)) for _ in range(n_modes[obs_idx])] for obs_idx in obs_set}
+        opt_controls_h = {obs_idx: [ca.vertcat(ca.DM(self.robust_horizon,2), opti.variable(self.N-self.robust_horizon,2)) for _ in range(n_modes[obs_idx])] for obs_idx in obs_set}
+        
         # opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(len(constraints))]
-        opt_epsilon_r = {obs_idx: [opti.variable(self.N,1) for _ in range(n_modes[obs_idx])] for obs_idx in obs_set}
+        # opt_epsilon_r = {obs_idx: [opti.variable(self.N,1) for _ in range(n_modes[obs_idx])] for obs_idx in obs_set}
+        
+        # other_obs_modes = {o_idx: m for o_idx, m in n_modes.items() if o_idx!=obs_idx}
+                    
+        obs_mode_combinations = list(product([n_modes[obs_idx] for obs_idx in n_modes.keys()]))
+        # this collects h term in policy for each MODE COMBO. Eg., if mode combo is (0,1,1), then h term := u_ff + h[obs_0][0]+h[obs_1][1]+ h_[obs_2][1]
+        
+        if not constraints:
+            opt_controls = [ca.vec(u_ff)]
+            # mode_prob = {obs_idx: self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep] for obs_idx in obs_set}
+        
+            mode_prob_combo = [ 1.]
+        else:
+            opt_controls   =     [   ca.vec(u_ff)+ca.vec(ca.sum2(ca.horzcat(*[ca.vec(opt_controls_h[obs_idx][combo[i]]) for i, obs_idx in enumerate(obs_set)]))) for n, combo in enumerate(obs_mode_combinations)]
+            mode_prob = {obs_idx: self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep] for obs_idx in obs_set}
+        
+            mode_prob_combo = [ ca.prod(*[mode_prob[obs_idx][combo[i]] for i, obs_idx in enumerate(obs_set)]) for n, combo in enumerate(obs_mode_combinations) ]
 
         # A_rob, B_rob, C_rob, E_rob = [], [], [], []
         opt_states, opt_x, opt_y, v, omega = [], [], [], [], []
         
         # TODO: just linearize using reference (from root node solve)
         A, B, C, E = self._get_robot_ATV_dynamics(current_state, self.reference_x, self.reference_u)
-        for obs, mm_controls in opt_controls.items():          
-            for control in mm_controls:
-                # A_rob.append(A); B_rob.append(B); C_rob.append(C); E_rob.append(E)
+        for control in opt_controls:         
+            
+            # nominal state predictions
+            opt_states.append(ca.vec(A@ca.DM(current_state)+B@control+C).reshape((-1,self.N+1)).T)
 
-                # nominal state predictions
-                opt_states.append(ca.vec(A@ca.DM(current_state)+B@ca.vec(control.T)+C).reshape((-1,self.N+1)).T)
+            opt_x.append(opt_states[-1][:,0])
+            opt_y.append(opt_states[-1][:,1])
+            v.append(control.reshape((-1,self.N)).T[:,0])
+            omega.append(control.reshape((-1,self.N)).T[:,1])
 
-                opt_x.append(opt_states[-1][:,0])
-                opt_y.append(opt_states[-1][:,1])
-                v.append(control[:,0])
-                omega.append(control[:,1])
-
-                # opti.subject_to(opti.bounded(0, opt_epsilon_r[j][:], 0.001))
-
-        # opt_epsilon_o = opti.variable(self.N+1, 1)
+                
         
         # parameters
         # opt_x0 = opti.parameter(3)
@@ -241,27 +255,29 @@ class MM_CBS(MPC_Base):
         R = self.cost_func_params['R']
         P = self.cost_func_params['P']
 
-        mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
-        for j in range(len(opt_states)):
+       
+        # opt_eps_combo   = [ for ]
+        for i, (opt_states_branch, opt_controls_branch) in enumerate(zip(opt_states, opt_controls)):
+            opt_controls_branch = opt_controls_branch.reshape((-1, self.N)).T
             for k in range(self.N):
-                mode_weight = mode_prob[j]
-                mode_weight = 1
-                robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]-opt_xs.T), Q, (opt_states[j][k, :]-opt_xs.T).T] 
-                            )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) + 100000 * opt_epsilon_r[j][k]) #+ 100000 * opt_epsilon_o[k] 
+                mode_weight = mode_prob_combo[i]
+ 
+                robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states_branch[k, :]-opt_xs.T), Q, (opt_states_branch[k, :]-opt_xs.T).T] 
+                            )+ ca.mtimes([opt_controls_branch[k, :], R, opt_controls_branch[k, :].T]) ) #+ 100000 * opt_epsilon_o[k] 
             
                 for obs in self.static_obs:
                     obs_x = obs[0]
                     obs_y = obs[1]
                     obs_dia = obs[2]
                     
-                    rob_obs_constraints_ = ca.sqrt((opt_states[k, 0]-obs_x)**2+(opt_states[k, 1]-obs_y)**2)-obs_dia/2 - self.rob_dia/2 - self.safety_margin #+ opt_epsilon_o[l]
+                    rob_obs_constraints_ = ca.sqrt((opt_states_branch[k, 0]-obs_x)**2+(opt_states_branch[k, 1]-obs_y)**2)-obs_dia/2 - self.rob_dia/2 - self.safety_margin #+ opt_epsilon_o[l]
                     opti.subject_to(rob_obs_constraints_ >= 0)
             
             # boundrary and control conditions
-            opti.subject_to(opti.bounded(-10.0, opt_x[j], 10.0))
-            opti.subject_to(opti.bounded(-5, opt_y[j], 5))
-            opti.subject_to(opti.bounded(-self.v_lim, v[j], self.v_lim))
-            opti.subject_to(opti.bounded(-self.omega_lim, omega[j], self.omega_lim))
+            opti.subject_to(opti.bounded(-10.0, opt_x[i], 10.0))
+            opti.subject_to(opti.bounded(-5, opt_y[i], 5))
+            opti.subject_to(opti.bounded(-self.v_lim, v[i], self.v_lim))
+            opti.subject_to(opti.bounded(-self.omega_lim, omega[i], self.omega_lim))
             # static obstacle constraint
             
         total_cost = robot_cost + collision_cost
@@ -296,8 +312,8 @@ class MM_CBS(MPC_Base):
         
         for obs_idx, modes in n_modes.items():
             for j in modes:
-                prediction = self.gmm_prediction[obs_idx][j]
-                opti.subject_to(opti.bounded(0, opt_epsilon_r[obs_idx][j][:], 0.001))
+                prediction = self.gmm_predictions[obs_idx][j]
+                # opti.subject_to(opti.bounded(0, opt_epsilon_r[obs_idx][j][:], 0.001))
                 for t in range(1,self.N):
                         
                     obs_pos   = ca.DM(prediction['means'][t-1][:2])
@@ -327,8 +343,11 @@ class MM_CBS(MPC_Base):
                         nom_robot_state = ca.vec(A@ca.DM(current_state)+B@ca.vec(robot_ff_control.T)+C).reshape((-1,self.N+1)).T
                         nom_dist = (rob_proj-obs_pos).T@(nom_robot_state[t,:2].T-rob_proj)
 
-                        opti.subject_to(rv_dist@rv_dist.T<=(opt_epsilon_r[j][t-1]+nom_dist)**2)
-                        opti.subject_to(nom_dist>=-opt_epsilon_r[obs_idx][j][t-1])
+                        # opti.subject_to(rv_dist@rv_dist.T<=(opt_epsilon_r[j][t-1]+nom_dist)**2)
+                        # opti.subject_to(nom_dist>=-opt_epsilon_r[obs_idx][j][t-1])
+                        
+                        opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
+                        opti.subject_to(nom_dist>=0)
                         
                         
                         # For Gurobi   
@@ -341,14 +360,15 @@ class MM_CBS(MPC_Base):
         # opts_setting = {'ipopt.print_level': 0, 'print_time': 0,}
         opti.minimize(total_cost)
         opti.solver('ipopt', opts_setting)
+        # opti.solver("OSQP")
         opti.set_value(opt_xs, self.final_state[agent_id])
 
         # # set optimizing target withe init guess
-        for j in range(n_modes):
-            if type(self.prev_controls[agent_id])!=type([]):
-                opti.set_initial(opt_controls[j], self.prev_controls[agent_id])  # (N, 2)
-            else:
-                opti.set_initial(opt_controls[j], self.prev_controls[agent_id][j])
+        # for j in range(n_modes):
+        #     if type(self.prev_controls[agent_id])!=type([]):
+        #         opti.set_initial(opt_controls[j], self.prev_controls[agent_id])  # (N, 2)
+        #     else:
+        #         opti.set_initial(opt_controls[j], self.prev_controls[agent_id][j])
 
         u_res = None
         next_states_pred = None
@@ -360,11 +380,11 @@ class MM_CBS(MPC_Base):
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
 
-            u_res ={ obs_idx : [] for obs_idx in obs_set}
+            u_res = [ sol.value(control.reshape((-1,self.N)).T) for control in opt_controls] 
             for obs_idx, modes in n_modes.items():
                 for mode in modes:
                     self.feedback_gains[obs_idx][mode] = sol.value(pol_gains[obs_idx][mode]).toarray()
-                    u_res[obs_idx].append(sol.value(opt_controls[obs_idx][mode]))
+
                    
                 # self.obs_affine_model[mode]['T']=sol.value(T_obs[0][mode])
                 # self.obs_affine_model[mode]['c']=sol.value(c_obs[0][mode]).reshape((-1,1))
@@ -377,10 +397,11 @@ class MM_CBS(MPC_Base):
             # obtain the control input
             
             # next_states_pred = sol.value(opt_states)
-            next_states_pred = [[ca.DM(current_state).T] for j in range(n_modes)]
+            next_states_pred = [[ca.DM(current_state).T] for j in range(1)]
 
-            for j in range(n_modes):
-                for t in range(u_res[j].shape[0]):
+            for j in range(1):
+                import pdb; pdb.set_trace()
+                for t in range(u_res[0].shape[0]):
                     next_states_pred[j].append(self.model.fCd(next_states_pred[j][-1], u_res[j][t,:]).T)
                 next_states_pred[j] = ca.vertcat(*next_states_pred[j])
             # eps_o = sol.value(opt_epsilon_o)
@@ -404,7 +425,7 @@ class MM_CBS(MPC_Base):
 
         self.setup_visualization()
         # self.setup_visualization_heatmap()
-        self.obs_affine_model ={obs_idx: {mode: {'T': None, 'c':None, 'E':None, 'covars':None} for mode in range(len(gmm_predictions[obs_idx]))} for obs_idx in range(self.n_obs)}
+        
         
         # parallelized implementation
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
@@ -416,13 +437,13 @@ class MM_CBS(MPC_Base):
             
             uncontrolled_traj = [self.uncontrolled_fleet_data[obs_idx]['executed_traj'] for obs_idx in range(self.n_obs)]
             current_uncontrolled_state = [uncontrolled_traj[obs_idx][self.num_timestep] for obs_idx in range(self.n_obs)]
-            gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)
+            self.gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)
             noise_chars = self.uncontrolled_fleet.get_gmm_predictions()
             mode_prob = [self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep] for obs_idx in range(self.n_obs)]
             
-            
-            
-            for obs_idx, agent_prediction, agent_noise in enumerate(zip(gmm_predictions, noise_chars)):
+            self.obs_affine_model ={obs_idx: {mode: {'T': None, 'c':None, 'E':None, 'covars':None} for mode in range(len(self.gmm_predictions[obs_idx]))} for obs_idx in range(self.n_obs)}
+            self.rob_affine_model ={'A': None, 'B':None, 'C':None, 'E':None}
+            for obs_idx, (agent_prediction, agent_noise) in enumerate(zip(self.gmm_predictions, noise_chars)):
                 for mode, prediction in agent_prediction.items():
                     mean_traj = prediction['means']
                     covariances = prediction['covariances']
@@ -444,23 +465,23 @@ class MM_CBS(MPC_Base):
             self.reference_x, self.reference_u = None, None
             results = [self.run_single_mpc(0, np.array(self.current_state[0]), [])]
             
-            self.reference_x, self.reference_u =self.prev_states[agent_id][0], self.prev_controls[agent_id][0]
+            self.reference_x, self.reference_u =self.prev_states[0][0], self.prev_controls[0][0]
             # results = pool.starmap(self.run_single_mpc, [(agent_id, np.array(self.current_state[agent_id]), []) for agent_id in range(self.num_agent)])
     
             pool.close()
             pool.join()
 
-            uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
-            current_uncontrolled_state = uncontrolled_traj[self.num_timestep]
-            gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)
+            # uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
+            # current_uncontrolled_state = uncontrolled_traj[self.num_timestep]
+            # gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)
 
             mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep] 
             
-            obs_pred = {0:
-                {'predictions':self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state),
-                 'mode_probs':self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep],
-                 'current_state':current_uncontrolled_state}}
-            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions[0], mode_prob)
+            obs_pred = {obs_idx:
+                {'predictions':self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)[obs_idx],
+                 'mode_probs':self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep],
+                 'current_state':current_uncontrolled_state[obs_idx]} for obs_idx in range(self.n_obs)}
+            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], self.gmm_predictions[0], mode_prob)
       
             # plt.plot(self._collision_check(0))
             # plt.show()
