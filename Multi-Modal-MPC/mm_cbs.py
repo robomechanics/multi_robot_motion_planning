@@ -13,8 +13,6 @@ from itertools import product
 class MM_CBS(MPC_Base):
     
     def _collision_check(self, agent_id, rob_sol, obs_id, obs_pred):
-        
-        
         N_samples = 50
         
         N_t = multivariate_normal.rvs(np.zeros(self.N), np.eye(self.N), N_samples)
@@ -23,8 +21,6 @@ class MM_CBS(MPC_Base):
         num_collisions = [0 for _ in range(self.num_modes)]
         min_distance = self.rob_dia*2+0.5
         
-        eps = 0.01
-        
         # uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
         # current_state_obs = uncontrolled_traj[self.num_timestep]
         # gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
@@ -32,7 +28,6 @@ class MM_CBS(MPC_Base):
         
         current_state_obs = obs_pred[obs_id]['current_state']
         mode_prob = obs_pred[obs_id]['mode_probs']
-
         
         conflicts, resolved = [], []
         time1= time.time()
@@ -51,7 +46,6 @@ class MM_CBS(MPC_Base):
                 num_collisions[mode]+=np.linalg.norm(rob_pos_dist-obs_dist)<=min_distance*self.N
                 # print(np.linalg.norm(rob_pos_dist-obs_dist))
                 
-                
             num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode] #collision probability for mode
             
             if num_collisions[mode] > self.delta:
@@ -64,8 +58,6 @@ class MM_CBS(MPC_Base):
         time2=time.time()-time1
         
         return conflicts, resolved, collision_prob  
-                
-                
     
     def _get_robot_ATV_dynamics(self, current_state, x_lin=None, u_lin=None):
         """

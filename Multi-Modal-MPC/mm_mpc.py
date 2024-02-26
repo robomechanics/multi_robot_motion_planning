@@ -43,10 +43,6 @@ class MM_MPC(MPC_Base):
                 x_lin[t+1,:]=self.model.fCd(x_lin[t,:], u_lin[t,:])
 
         for t in range(self.N):
-            # if u_lin[t,0] > 0 and u_lin[t,0] < 0.1 :
-            #     u_lin[t,0]=0.1
-            # elif u_lin[t,0] < 0 and u_lin[t,0]> -0.1:
-            #     u_lin[t,0]=-0.1
             A[t]=self.model.fAd(x_lin[t,:], u_lin[t,:])
             B[t]=self.model.fBd(x_lin[t,:], u_lin[t,:])
             C[t]=x_lin[t+1,:].T-A[t]@x_lin[t,:].T-B[t]@u_lin[t,:].T
@@ -109,21 +105,11 @@ class MM_MPC(MPC_Base):
 
     def run_single_mpc(self, agent_id, current_state, inter_rob_constraints, linearized_ca = False):
         # casadi parameters
-        opti = ca.Opti()
-
-        # opt_states = opti.variable(self.N + 1, 3)
-        # opt_x = opt_states[:,0]
-        # opt_y = opt_states[:,1]
+        opti = ca.Opti('conic')
 
         current_state_obs_vector = [self.uncontrolled_fleet_data[obs]['executed_traj'][self.num_timestep] for obs in range(len(self.uncontrolled_fleet_data))]
         gmm_predictions_vector = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs_vector)
         noise_chars = self.uncontrolled_fleet.get_gmm_predictions()
-
-        # for obs in range(len(self.uncontrolled_fleet_data)):
-        #     uncontrolled_traj = self.uncontrolled_fleet_data[obs]['executed_traj']
-        #     current_state_obs = uncontrolled_traj[self.num_timestep]
-        #     gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
-        #     noise_chars      = self.uncontrolled_fleet.get_gmm_predictions()
 
         ####
         # EV feedforward + TV state feedback policies from https://arxiv.org/abs/2109.09792
@@ -312,12 +298,14 @@ class MM_MPC(MPC_Base):
                         opti.subject_to(rob_rob_constraint >= -opt_epsilon_r[j][t-1])                        
                         opti.subject_to(rob_rob_constraint >= 0)
 
-        opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
-                            'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
-                            'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
-        # opts_setting = {'ipopt.print_level': 0, 'print_time': 0,}
+        # opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
+        #                     'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
+        #                     'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
+        # # opts_setting = {'ipopt.print_level': 0, 'print_time': 0,}
         opti.minimize(total_cost)
-        opti.solver('ipopt', opts_setting)
+
+        # opti.solver('ipopt', opts_setting)
+        opti.solver('osqp')
         opti.set_value(opt_xs, self.final_state[agent_id])
 
         # # set optimizing target withe init guess
@@ -337,9 +325,9 @@ class MM_MPC(MPC_Base):
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
             
-            # for mode in range(self.num_modes):
-            #     self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
-            #     self.feedback_gains_cache[mode].append(sol.value(pol_gains[0][mode]).toarray())
+            for mode in range(self.num_modes):
+                self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
+                self.feedback_gains_cache[mode].append(sol.value(pol_gains[0][mode]).toarray())
 
             # obtain the control input
             u_res = [sol.value(opt_controls[j]) for j in range(self.num_modes)]
@@ -364,7 +352,7 @@ class MM_MPC(MPC_Base):
         return u_res, next_states_pred
     
     def simulate(self):
-        self.setup_visualization()
+        # self.setup_visualization()
         # self.setup_visualization_heatmap()
         
         # parallelized implementation
@@ -388,7 +376,7 @@ class MM_MPC(MPC_Base):
 
             mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep] 
       
-            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions, mode_prob, ref=self.ref)
+            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions, mode_prob, ref=self.ref)
             # self.plot_feedback_gains()
 
             # Process the results and update the current state
