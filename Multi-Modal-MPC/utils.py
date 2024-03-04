@@ -435,10 +435,12 @@ def plot_results(results):
         # Configure the plot
         plt.xlabel('Noise Level')
         plt.ylabel(data_type.replace('_', ' ').title())
+        plt.ylabel("Task Completion Time [Sec]")
         plt.title(titles[i])
-        # plt.title(f'{data_type.replace("_", " ").title()}')
         plt.xticks(index + 0.4, [str(n) for n in noise_levels])
-        plt.legend()
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        # plt.legend()
 
         plt.tight_layout()
         plt.show()
