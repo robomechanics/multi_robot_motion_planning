@@ -124,8 +124,6 @@ class MM_CBS(MPC_Base):
         time2=time.time()-time1
         
         return conflicts, resolved, collision_prob  
-                
-                
     
     def _get_robot_ATV_dynamics(self, current_state, x_lin=None, u_lin=None):
         """

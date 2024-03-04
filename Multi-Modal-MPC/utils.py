@@ -334,7 +334,7 @@ def get_obstacle_coordinates(occupancy_grid, current_position):
     
     return obstacle_centers
 
-def summarize_results(folder_path):
+def summarize_algorithm_comparison_results(folder_path):
     results = {}
     for subfolder in os.listdir(folder_path):
         if os.path.isdir(os.path.join(folder_path, subfolder)):
@@ -357,7 +357,7 @@ def summarize_results(folder_path):
                         infeasible_count += data['infeasible_count']
                         avg_comp_time += np.mean(data['avg_comp_time'])
                         max_comp_time += np.mean(data['max_comp_time'])
-                        control_mag_avg += np.linalg.norm(data['control_cache'][0][0])
+                        control_mag_avg += np.linalg.norm(data['control_cache'][0][1])
                         num_trials += 1
 
             # Calculate averages and ratios
@@ -379,6 +379,57 @@ def summarize_results(folder_path):
             results[noise_level][algorithm]['avg_comp_time'] = avg_comp_time
             results[noise_level][algorithm]['max_comp_time'] = max_comp_time
             results[noise_level][algorithm]['control_mag_avg'] = control_mag_avg
+
+    return results
+
+def summarize_ablation_comparison_results(folder_path):
+    results = {}
+    for subfolder in os.listdir(folder_path):
+        if os.path.isdir(os.path.join(folder_path, subfolder)):
+            parts = subfolder.split('_')
+            algorithm = parts[0]
+            noise_level = parts[2]
+            branch_time = parts[4]
+
+            infeasible_count = 0
+            num_timesteps = 0
+            avg_comp_time = 0
+            max_comp_time = 0
+            control_mag_avg = 0
+            num_trials = 0
+
+            for file in os.listdir(os.path.join(folder_path, subfolder)):
+                if file.endswith('.pkl'):
+                    with open(os.path.join(folder_path, subfolder, file), 'rb') as f:
+                        data = pickle.load(f)
+                        num_timesteps += data['num_timesteps']
+                        infeasible_count += data['infeasible_count']
+                        avg_comp_time += np.mean(data['avg_comp_time'])
+                        max_comp_time += np.mean(data['max_comp_time'])
+                        control_mag_avg += np.linalg.norm(data['control_cache'][0][1])
+                        num_trials += 1
+
+            # Calculate averages and ratios
+            infeasible_ratio = infeasible_count / num_timesteps 
+            task_completion_time = (num_timesteps / num_trials) * 0.2
+            avg_comp_time = avg_comp_time / num_trials
+            max_comp_time = max_comp_time / num_trials
+            control_mag_avg = control_mag_avg / num_trials
+
+            # Initialize dictionary structure if needed
+            if noise_level not in results:
+                results[noise_level] = {}
+            if branch_time not in results[noise_level]:
+                results[noise_level][branch_time] = {}
+            if algorithm not in results[noise_level][branch_time]:
+                results[noise_level][branch_time][algorithm] = {}
+
+            # Store metrics in the dictionary
+            results[noise_level][branch_time][algorithm]['infeasible_ratio'] = infeasible_ratio
+            results[noise_level][branch_time][algorithm]['task_completion_time'] = task_completion_time
+            results[noise_level][branch_time][algorithm]['avg_comp_time'] = avg_comp_time
+            results[noise_level][branch_time][algorithm]['max_comp_time'] = max_comp_time
+            results[noise_level][branch_time][algorithm]['control_mag_avg'] = control_mag_avg
 
     return results
 
@@ -404,7 +455,7 @@ def compute_average_norm(feedback_gain_map):
     
     return average_norm
 
-def plot_results(results):
+def plot_algorithm_comparison_results(results):
     algorithm_order = ["MM-MPC", "Branch-MPC", "Robust-MPC"]
     data_types = ['infeasible_ratio', 'task_completion_time', 'avg_comp_time', 'max_comp_time', 'control_mag_avg']
     colors = ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7']
@@ -443,10 +494,44 @@ def plot_results(results):
         plt.tight_layout()
         plt.show()
 
+def plot_ablation_comparison_results(results):
+    metrics = ['infeasible_ratio', 'avg_comp_time', 'max_comp_time', 'control_mag_avg']
+    algorithms = set(alg for noise_level in results.values() for branch_time in noise_level.values() for alg in branch_time)
+    
+    for algorithm in algorithms:
+        for metric in metrics:
+            plt.figure(figsize=(10, 8))
+            
+            # Prepare data: Collect all values for each branching time across noise levels
+            data_for_plot = {}
+            for noise_level in sorted(results, key=lambda x: float(x)):
+                for branch_time in results[noise_level]:
+                    if algorithm in results[noise_level][branch_time]:
+                        if branch_time not in data_for_plot:
+                            data_for_plot[branch_time] = []
+                        value = results[noise_level][branch_time][algorithm][metric]
+                        data_for_plot[branch_time].append((float(noise_level), value))
+            
+            # Sort data for plotting to ensure noise levels are in increasing order
+            for branch_time in data_for_plot:
+                data_for_plot[branch_time].sort(key=lambda x: x[0])
+            
+            # Plotting
+            for branch_time, values in data_for_plot.items():
+                # Unzip the sorted tuples into two lists for plotting
+                noise_levels, metric_values = zip(*values)
+                plt.plot(noise_levels, metric_values, label=f'BT = {branch_time}', linewidth=2)
+            
+            desc = metric + "_" + algorithm
+            plt.title(desc)
+            plt.xlabel('Noise Level')
+            plt.ylabel(desc)
+            plt.legend()
+            plt.show()
 
 def animate_trial(folder_name, trial_number):
     # Construct the file path
-    file_path = f"mm_results/{folder_name}/trial_{trial_number}.pkl"
+    file_path = f"mm_results_arch/{folder_name}/trial_{trial_number}.pkl"
         
     # Load the pickle file
     with open(file_path, 'rb') as file:
@@ -509,11 +594,11 @@ def animate_trial(folder_name, trial_number):
 
         # Update control plot data lists
         control_data['frames'].append(frame)  # Append the current frame number
-        control_data['values'].append(control_cache[frame][0][0])  # Append the current control value
+        control_data['values'].append(control_cache[frame][0][1])  # Append the current control value
         
         # Update control plot
         control_line.set_data(control_data['frames'], control_data['values'])  # Update the control plot with accumulated data
-        ax2.set_ylim(min(control_data['values']) - 1, max(control_data['values']) + 1)
+        ax2.set_ylim(-1.5, 1.5)
         
         return [controlled_circle, uncontrolled_circle, trajectory, control_line] + prediction_lines
    
@@ -525,10 +610,10 @@ def animate_trial(folder_name, trial_number):
     # Specify the writer and options (FFmpeg is a common choice, but you might need to adjust based on your system)
     
     # Specify the filename and path where you want to save the animation
-    animation_file_name = f"trial_{trial_number}_animation.gif"
+    # animation_file_name = f"trial_{trial_number}_animation.gif"
     
-    # Save the animation
-    writer = PillowWriter(fps=30)  # Adjust fps as needed
-    ani.save(animation_file_name, writer=writer)   
+    # # Save the animation
+    # writer = PillowWriter(fps=30)  # Adjust fps as needed
+    # ani.save(animation_file_name, writer=writer)   
    
     plt.show()
