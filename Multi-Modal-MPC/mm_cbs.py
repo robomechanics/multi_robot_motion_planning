@@ -12,8 +12,9 @@ from itertools import product
 
 class MM_CBS(MPC_Base):
     
-    def _collision_check(self, agent_id, rob_sol, obs_id, obs_pred):
+    def _collision_check(self, agent_id, rob_sol, obs_id, obs_pred, obs_constraints):
         
+        modes_set = set(range(self.num_modes))-set(obs_constraints[obs_id])
         
         N_samples = 50
         
@@ -24,41 +25,99 @@ class MM_CBS(MPC_Base):
         min_distance = self.rob_dia*2+0.5
         
         eps = 0.01
-        
-        # uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
-        # current_state_obs = uncontrolled_traj[self.num_timestep]
-        # gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
-        # mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
-        
+                
         current_state_obs = obs_pred[obs_id]['current_state']
         mode_prob = obs_pred[obs_id]['mode_probs']
-
         
+        
+        obs_set = set(c[0] for c in obs_constraints)
+        n_obs = len(obs_set)
+
+        n_modes = {obs_idx: [] for obs_idx in obs_set}
+        for constraint in obs_constraints:
+            n_modes[constraint[0]].append(constraint[1])
         conflicts, resolved = [], []
         time1= time.time()
     
-        for mode in range(self.num_modes):
+        for mode in range(modes_set):   # these are modes that are NOT in constraints_list for obs_id
             obs_mean = (self.obs_affine_model[obs_id][mode]['T']@current_state_obs[:2]).reshape((-1,1)) + self.obs_affine_model[obs_id][mode]['c']
             # rob_mean = ca.vec(self.prev_states[agent_id][mode].T)
             rob_mean = ca.vec(rob_sol["states"][mode].T)
-            feedback_gains = rob_sol['pol_gains'][mode]
-            for sample in range(N_samples):
-                obs_dist = obs_mean + self.obs_affine_model[obs_id][mode]['E']@N_t[sample,:].reshape((-1,1))
-      
-                rob_dist = rob_mean + self.rob_affine_model['B'].toarray()@feedback_gains@(obs_dist[:-2]-obs_mean[:-2])
-                
-                rob_pos_dist = ca.vec(rob_dist.reshape((-1,self.N+1))[:2,:])
+            
+            
+            if obs_constraints[obs_id] == []:   # if this obstacle 
+                feedback_gains = ca.DM(self.N*2, self.N*2)
+                for sample in range(N_samples):
+                    obs_dist = obs_mean + self.obs_affine_model[obs_id][mode]['E']@N_t[sample,:].reshape((-1,1))
+        
+                    rob_dist = rob_mean + self.rob_affine_model['B'].toarray()@feedback_gains@(obs_dist[:-2]-obs_mean[:-2])
+                    
+                    rob_pos_dist = ca.vec(rob_dist.reshape((-1,self.N+1))[:2,:])
 
-                num_collisions[mode]+=np.linalg.norm(rob_pos_dist-obs_dist)<=min_distance*self.N
+                    num_collisions[mode]+=np.linalg.norm(rob_pos_dist-obs_dist)<=min_distance*self.N
+                    
+                
+                if num_collisions[mode] > self.delta:
+                    conflicts.append([agent_id, obs_id, mode])
+                else:
+                    resolved.append([agent_id, obs_id, mode])
+            else:
+                for o_mode, feedback_gains in rob_sol['pol_gains'][obs_id].items():
+                    # Do collision check below. IF it didnt pass, try with anoteher gain
+                    feedback_bias = rob_sol['pol_bias'][obs_id][o_mode]
+                    other_obs_modes = {o_idx: m for o_idx, m in n_modes.items() if o_idx!=obs_id}
+                    
+                    obs_mode_combinations = list(product(o_mode,*[other_obs_modes[obs] for obs in other_obs_modes.keys()]))
+                    # Sort combinations by probabiliity, and pick top qth percentile
+                    obs_list = [obs_id]+list(other_obs_modes.keys())
+                    
+                    num_collisions[mode] = 0
+                    for combination in obs_mode_combinations:
+                        # do collision check for all possible high prob mode combinations of other obstacles to define pol = h + h_obs+K_obs (o_obs) +  h_i + K_i o_i
+                
+                        for sample in range(N_samples):
+                            obs_dist = obs_mean + self.obs_affine_model[obs_id][mode]['E']@N_t[sample,:].reshape((-1,1))
+                            
+                            # this is h_obs + K_obs@ (o_obs - E[o_obs])
+                            feedback_term = feedback_gains@(obs_dist[:-2]-obs_mean[:-2]) + feedback_bias
+                            
+                            # this loop computes the rest for the policy
+                            for i in range(1, len(combination)):
+                                obs_mean = (self.obs_affine_model[i][combination[i]]['T']@current_state_obs[:2]).reshape((-1,1)) + self.obs_affine_model[i][combination[i]]['c']
+                                obs_dist = obs_mean + self.obs_affine_model[i][combination[i]]['E']@N_t[sample,:].reshape((-1,1))
+                                feedback_term += rob_sol['pol_bias'][i][combination[i]]    +    rob_sol['pol_gains'][i][combination[i]]@(obs_dist[:-2]-obs_mean[:-2])
+                
+                            rob_dist = rob_mean + self.rob_affine_model['B'].toarray()@feedback_term
+                            
+                            rob_pos_dist = ca.vec(rob_dist.reshape((-1,self.N+1))[:2,:])
+                            # rob_reach_dist = ca.vec(rob_dist_reach.reshape((-1,self.N+1))[:2,:])
+
+                            num_collisions[mode]+=np.linalg.norm(rob_pos_dist-obs_dist)<=min_distance*self.N
+                        
+                    
+                    if num_collisions[mode] <= self.delta:
+                        rob_sol['pol_gains'][obs_id][mode] = feedback_gains
+                        rob_sol['pol_bias'][obs_id][mode] = feedback_bias
+                        resolved.append([agent_id, obs_id, mode])
+                        break
+                
+                if mode not in rob_sol['pol_gains'].keys():
+                    conflicts.append([agent_id, obs_id, mode])
+                    
+
+                        
+                        
+                    #     conflicts.append([agent_id, obs_id, mode])
+                    # else:
+                    #     resolved.append([agent_id, obs_id, mode])
+            
                 # print(np.linalg.norm(rob_pos_dist-obs_dist))
+                
                 
                 
             num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode] #collision probability for mode
             
-            if num_collisions[mode] > self.delta:
-                conflicts.append([agent_id, obs_id, mode])
-            else:
-                resolved.append([agent_id, obs_id, mode])
+            
                 
             collision_prob+=num_collisions[mode]
             
@@ -175,15 +234,7 @@ class MM_CBS(MPC_Base):
         # casadi parameters
         opti = ca.Opti()
         
-        # opt_states = opti.variable(self.N + 1, 3)
-        # opt_x = opt_states[:,0]
-        # opt_y = opt_states[:,1]
-        # uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
-        # current_state_obs = uncontrolled_traj[self.num_timestep]
-        # gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
-        # noise_chars      = self.uncontrolled_fleet.get_gmm_predictions()
-        # n_modes = len(gmm_predictions[0])
-        # n_obs=len(gmm_predictions)
+
         
         obs_set = set(c[0] for c in constraints)
         n_obs = len(obs_set)
@@ -228,7 +279,7 @@ class MM_CBS(MPC_Base):
         opt_states, opt_x, opt_y, v, omega = [], [], [], [], []
         
         # TODO: just linearize using reference (from root node solve)
-        A, B, C, E = self._get_robot_ATV_dynamics(current_state, self.reference_x, self.reference_u)
+        A, B, C, E =  self.rob_affine_model['A'], self.rob_affine_model['B'], self.rob_affine_model['C'], self.rob_affine_model['E']
         for control in opt_controls:         
             
             # nominal state predictions
@@ -380,19 +431,16 @@ class MM_CBS(MPC_Base):
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
 
-            u_res = [ sol.value(control.reshape((-1,self.N)).T) for control in opt_controls] 
+            u_res = [ sol.value(control.reshape((-1,self.N)).T) for control in opt_controls]
+            self.feedforward = sol.value(u_ff).toarray() 
             for obs_idx, modes in n_modes.items():
                 for mode in modes:
                     self.feedback_gains[obs_idx][mode] = sol.value(pol_gains[obs_idx][mode]).toarray()
-
+                    self.feedback_bias[obs_idx][mode]  = sol.value(opt_controls_h[obs_idx][mode]).toarray()
                    
-                # self.obs_affine_model[mode]['T']=sol.value(T_obs[0][mode])
-                # self.obs_affine_model[mode]['c']=sol.value(c_obs[0][mode]).reshape((-1,1))
-                # self.obs_affine_model[mode]['E']=sol.value(E_obs[0][mode])
-            self.rob_affine_model['A']=sol.value(A)
-            self.rob_affine_model['B']=sol.value(B)
-            self.rob_affine_model['C']=sol.value(C)
-            self.rob_affine_model['E']=sol.value(E)             
+             
+            
+                       
 
             # obtain the control input
             
@@ -442,7 +490,7 @@ class MM_CBS(MPC_Base):
             mode_prob = [self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep] for obs_idx in range(self.n_obs)]
             
             self.obs_affine_model ={obs_idx: {mode: {'T': None, 'c':None, 'E':None, 'covars':None} for mode in range(len(self.gmm_predictions[obs_idx]))} for obs_idx in range(self.n_obs)}
-            self.rob_affine_model ={'A': None, 'B':None, 'C':None, 'E':None}
+            
             for obs_idx, (agent_prediction, agent_noise) in enumerate(zip(self.gmm_predictions, noise_chars)):
                 for mode, prediction in agent_prediction.items():
                     mean_traj = prediction['means']
@@ -455,17 +503,17 @@ class MM_CBS(MPC_Base):
                     
                     self.obs_affine_model[obs_idx][mode].update({'T': T_o, 'c':c_o, 'E':E_o, 'covars':obs_xy_cov})
                 
-            
-            # self.rob_affine_model[mode]['A']=sol.value(A_rob[mode])
-            # self.rob_affine_model[mode]['B']=sol.value(B_rob[mode])
-            # self.rob_affine_model[mode]['C']=sol.value(C_rob[mode])
-            # self.rob_affine_model[mode]['E']=sol.value(E_rob[mode])   
+            A, B, C, E = self._get_robot_ATV_dynamics(np.array(self.current_state[0]))
+            self.rob_affine_model ={'A': A, 'B':B, 'C':C, 'E':E}
     
             # Apply MPC solve to each agent in parallel
             self.reference_x, self.reference_u = None, None
             results = [self.run_single_mpc(0, np.array(self.current_state[0]), [])]
             
+            
             self.reference_x, self.reference_u =self.prev_states[0][0], self.prev_controls[0][0]
+            A, B, C, E = self._get_robot_ATV_dynamics(np.array(self.current_state[0]), self.reference_x, self.reference_u)
+            self.rob_affine_model ={'A': A, 'B':B, 'C':C, 'E':E}
             # results = pool.starmap(self.run_single_mpc, [(agent_id, np.array(self.current_state[agent_id]), []) for agent_id in range(self.num_agent)])
     
             pool.close()
@@ -515,10 +563,10 @@ class MM_CBS(MPC_Base):
             time_2 = time.time()
             self.avg_comp_time.append(time_2-time_1)
             
-            rob_sol ={'states': self.prev_states[agent_id], 'controls': self.prev_controls[agent_id], 'pol_gains':self.feedback_gains}
+            rob_sol ={'states': self.prev_states[agent_id], 'controls': self.prev_controls[agent_id], 'pol_gains': self.feedback_gains, "pol_bias": self.feedback_bias}
             conflicts, resolved, collision_prob = self._collision_check(agent_id,  rob_sol, 0, obs_pred)
             MPC_constraints = {agent_id : []}
-            node = MM_Node(0, {"states": self.prev_states[agent_id], "controls":self.prev_controls[agent_id], "pol_gains":self.feedback_gains},
+            node = MM_Node(0, {"states": self.prev_states[agent_id], "controls":self.prev_controls[agent_id], "pol_gains":self.feedback_gains, "pol_bias":self.feedback_bias},
                                 conflicts,
                                 resolved, MPC_constraints)   
 
