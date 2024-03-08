@@ -8,6 +8,7 @@ import scipy.special as sp
 from scipy.stats import multivariate_normal
 import pdb
 from mm_node import MM_Node
+import math as m
 from itertools import product
 
 class MM_CBS(MPC_Base):
@@ -25,15 +26,18 @@ class MM_CBS(MPC_Base):
         min_distance = self.rob_dia*2+0.5
         
         eps = 0.01
+        obs_set = set(c[0] for c in obs_constraints)
+        n_obs = len(obs_set)
                 
         current_state_obs = obs_pred[obs_id]['current_state']
         mode_prob = obs_pred[obs_id]['mode_probs']
+        other_modes_prob = { k : obs_pred[k]['mode_probs'] for k in obs_set if k!=obs_id}
         
         
-        obs_set = set(c[0] for c in obs_constraints)
-        n_obs = len(obs_set)
+       
 
         n_modes = {obs_idx: [] for obs_idx in obs_set}
+        
         for constraint in obs_constraints:
             n_modes[constraint[0]].append(constraint[1])
         conflicts, resolved = [], []
@@ -486,6 +490,24 @@ class MM_CBS(MPC_Base):
             self.gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)
             noise_chars = self.uncontrolled_fleet.get_gmm_predictions()
             mode_prob = [self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep] for obs_idx in range(self.n_obs)]
+            #  mode_prob_eg = [(0.9, 0.1), (0.5, 0.5)]
+            
+            obs_mode_combinations = list(product(*[self.num_modes for obs in range(self.n_obs)]))
+            mode_prob_combinations = sorted(enumerate([ m.prod([mode_prob[k][mode_conf[k]] for k in range(self.n_obs)])  for mode_conf in obs_mode_combinations]), key=lambda x: -x[1][1])    # mode_conf = [1,1] ==> [0.1, 0.5]
+            
+            
+            # [[0,0]:0.45, [0,1]:0.45, [1,0]:0.05, [1,1]:0.05] ====> [[0,0], [0,1]]  ===> 0.9
+            n_mode_confs = 1
+            prob_sum = mode_prob_combinations[0][1]
+            
+            mode_conf_idx =[mode_prob_combinations[0][0]]
+            for i in range(1,len(obs_mode_combinations)):
+                if prob_sum >= self.prob_thresh:
+                    breaks
+                else:
+                    prob_sum +=mode_prob_combinations[i][1]
+                    n_mode_confs += 1
+                    mode_conf_idx.append(mode_prob_combinations[i][0])
             
             self.obs_affine_model ={obs_idx: {mode: {'T': None, 'c':None, 'E':None, 'covars':None} for mode in range(len(self.gmm_predictions[obs_idx]))} for obs_idx in range(self.n_obs)}
             
