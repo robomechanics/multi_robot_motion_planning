@@ -22,6 +22,7 @@ class MPC_Base:
         self.epsilon_r = mpc_params['epsilon_r']
         self.safety_margin = mpc_params['safety_margin']
         self.linearized_ca = mpc_params['linearized_ca']
+        self.prob_thresh   = mpc_params['mode_conf_prob_thresh']
         self.initial_state = initial_state
         self.final_state = final_state
         self.cost_func_params = cost_func_params
@@ -48,6 +49,9 @@ class MPC_Base:
         
         self.feedback_gains = {mode_id: np.zeros((2*self.N, 2*self.N)) for mode_id in range(self.num_modes)}
         self.feedback_gains_cache = {mode_id: [] for mode_id in range(self.num_modes)}
+        
+        self.feedback_bias = {mode_id: np.zeros((2*self.N, 2*self.N)) for mode_id in range(self.num_modes)}
+        self.feedback_bias_cache = {mode_id: [] for mode_id in range(self.num_modes)}
         self.heatmaps = []
         self.current_state = {}
         for i in range(self.num_agent):
