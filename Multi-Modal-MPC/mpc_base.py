@@ -47,11 +47,7 @@ class MPC_Base:
         self.prev_epsilon_o = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
         self.prev_epsilon_r = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
         
-        self.feedback_gains = {mode_id: np.zeros((2*self.N, 2*self.N)) for mode_id in range(self.num_modes)}
-        self.feedback_gains_cache = {mode_id: [] for mode_id in range(self.num_modes)}
         
-        self.feedback_bias = {mode_id: np.zeros((2*self.N, 2*self.N)) for mode_id in range(self.num_modes)}
-        self.feedback_bias_cache = {mode_id: [] for mode_id in range(self.num_modes)}
         self.heatmaps = []
         self.current_state = {}
         for i in range(self.num_agent):
@@ -59,6 +55,11 @@ class MPC_Base:
 
         self.n_obs=len(self.uncontrolled_fleet_data)
 
+        self.feedback_gains = {obs_idx: {mode_id: np.zeros((2*self.N, 2*self.N)) for mode_id in range(self.num_modes)} for obs_idx in range(self.n_obs)}
+        self.feedback_gains_cache = {obs_idx: {mode_id: [] for mode_id in range(self.num_modes)} for obs_idx in range(self.n_obs)}
+        
+        self.feedback_bias = {obs_idx:{mode_id: np.zeros((2*self.N, 2*self.N)) for mode_id in range(self.num_modes)}for obs_idx in range(self.n_obs)}
+        self.feedback_bias_cache = {obs_idx:{mode_id: [] for mode_id in range(self.num_modes)}for obs_idx in range(self.n_obs)}
         self.obs = obs
         self.dyn_obs = obs["dynamic"]
         self.static_obs = obs["static"]

@@ -10,11 +10,13 @@ import pdb
 from mm_node import MM_Node
 import math as m
 from itertools import product
+import copy
 
 class MM_CBS(MPC_Base):
     
     def _collision_check(self, agent_id, rob_sol, obs_id, obs_pred, obs_constraints):
         
+        # This should ideally only consider modes that are in the thresholded mode cobination set
         modes_set = set(range(self.num_modes))-set(obs_constraints[obs_id])
         
         N_samples = 50
@@ -46,12 +48,12 @@ class MM_CBS(MPC_Base):
     
         for mode in modes_set:   # these are modes that are NOT in constraints_list for obs_id
             obs_mean = (self.obs_affine_model[obs_id][mode]['T']@current_state_obs[:2]).reshape((-1,1)) + self.obs_affine_model[obs_id][mode]['c']
-            # rob_mean = ca.vec(self.prev_states[agent_id][mode].T)
-            rob_mean = ca.vec(rob_sol["states"][mode].T)
-            
-            
-            if obs_constraints[obs_id] == []:   # if this obstacle 
+            rob_mean = ca.vec(self.prev_states[agent_id])
+                
+            if obs_constraints[obs_id] == []:   # if this obstacle didn't have any constraints in the MPC
+                
                 feedback_gains = ca.DM(self.N*2, self.N*2)
+                
                 for sample in range(N_samples):
                     obs_dist = obs_mean + self.obs_affine_model[obs_id][mode]['E']@N_t[sample,:].reshape((-1,1))
         
@@ -91,11 +93,9 @@ class MM_CBS(MPC_Base):
                                 obs_mean = (self.obs_affine_model[i][combination[i]]['T']@current_state_obs[:2]).reshape((-1,1)) + self.obs_affine_model[i][combination[i]]['c']
                                 obs_dist = obs_mean + self.obs_affine_model[i][combination[i]]['E']@N_t[sample,:].reshape((-1,1))
                                 feedback_term += rob_sol['pol_bias'][i][combination[i]]    +    rob_sol['pol_gains'][i][combination[i]]@(obs_dist[:-2]-obs_mean[:-2])
-                
                             rob_dist = rob_mean + self.rob_affine_model['B'].toarray()@feedback_term
                             
                             rob_pos_dist = ca.vec(rob_dist.reshape((-1,self.N+1))[:2,:])
-                            # rob_reach_dist = ca.vec(rob_dist_reach.reshape((-1,self.N+1))[:2,:])
 
                             num_collisions[mode]+=np.linalg.norm(rob_pos_dist-obs_dist)<=min_distance*self.N
                         
@@ -222,7 +222,7 @@ class MM_CBS(MPC_Base):
 
     def run_single_mpc(self, agent_id, current_state, constraints, linearized_ca = False):
         '''
-        constraints = [(obs_i, 1, 'new'), (obs_i, 2, 'old'), (obs_j, 0), (obs_j, 3), (obs_k, 0)] (as an eg.)
+        constraints = {obs_i: [(1, 'new'), (2, 'old')], obs_j: [(0, 'old'), (2, 'old')]} (as an eg.)
         
         '''
         # casadi parameters
@@ -230,14 +230,14 @@ class MM_CBS(MPC_Base):
         
 
         
-        obs_set = set(c[0] for c in constraints)
+        obs_set = [c for c in constraints]
         n_obs = len(obs_set)
         
         
         # for the example in docstring, n_modes = {obs_i = [1,2], obs_j=[0,3], obs_k= [0]}
         n_modes = {obs_idx: [] for obs_idx in obs_set}
-        for constraint in constraints:
-            n_modes[constraint[0]].append(constraint[1])        
+        for obs_id, modes in constraints.items():
+            n_modes[obs_id] += [j for j,tag in constraints[obs_id]]        
         
 
         ####
@@ -248,26 +248,27 @@ class MM_CBS(MPC_Base):
         u_ff = opti.variable(self.N, 2)
         
         
-        opt_controls_h = {obs_idx: [ca.vertcat(ca.DM(self.robust_horizon,2), opti.variable(self.N-self.robust_horizon,2)) for _ in range(n_modes[obs_idx])] for obs_idx in obs_set}
+        opt_controls_h = {obs_idx: [ca.vertcat(ca.DM(self.robust_horizon,2), opti.variable(self.N-self.robust_horizon,2)) for _ in n_modes[obs_idx]] for obs_idx in obs_set}
         
         # opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(len(constraints))]
         # opt_epsilon_r = {obs_idx: [opti.variable(self.N,1) for _ in range(n_modes[obs_idx])] for obs_idx in obs_set}
         
         # other_obs_modes = {o_idx: m for o_idx, m in n_modes.items() if o_idx!=obs_idx}
                     
-        obs_mode_combinations = list(product([n_modes[obs_idx] for obs_idx in n_modes.keys()]))
+        # obs_mode_combinations = list(product([n_modes[obs_idx] for obs_idx in n_modes.keys()]))
+        obs_mode_combinations = self.obs_mode_combinations
         # this collects h term in policy for each MODE COMBO. Eg., if mode combo is (0,1,1), then h term := u_ff + h[obs_0][0]+h[obs_1][1]+ h_[obs_2][1]
         
         if not constraints:
             opt_controls = [ca.vec(u_ff)]
-            # mode_prob = {obs_idx: self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep] for obs_idx in obs_set}
-        
+            # mode_prob = {obs_idx: self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep] for obs_idx in obs_set
             mode_prob_combo = [ 1.]
         else:
+            
             opt_controls   =     [   ca.vec(u_ff)+ca.vec(ca.sum2(ca.horzcat(*[ca.vec(opt_controls_h[obs_idx][combo[i]]) for i, obs_idx in enumerate(obs_set)]))) for n, combo in enumerate(obs_mode_combinations)]
             mode_prob = {obs_idx: self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep] for obs_idx in obs_set}
-        
-            mode_prob_combo = [ ca.prod(*[mode_prob[obs_idx][combo[i]] for i, obs_idx in enumerate(obs_set)]) for n, combo in enumerate(obs_mode_combinations) ]
+            
+            # mode_prob_combo = [ m.prod(*[mode_prob[obs_idx][combo[i]] for i, obs_idx in enumerate(obs_set)]) for n, combo in enumerate(obs_mode_combinations) ]
 
         # A_rob, B_rob, C_rob, E_rob = [], [], [], []
         opt_states, opt_x, opt_y, v, omega = [], [], [], [], []
@@ -305,8 +306,8 @@ class MM_CBS(MPC_Base):
         for i, (opt_states_branch, opt_controls_branch) in enumerate(zip(opt_states, opt_controls)):
             opt_controls_branch = opt_controls_branch.reshape((-1, self.N)).T
             for k in range(self.N):
-                mode_weight = mode_prob_combo[i]
- 
+                mode_weight = 1#mode_prob_combo[i]
+
                 robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states_branch[k, :]-opt_xs.T), Q, (opt_states_branch[k, :]-opt_xs.T).T] 
                             )+ ca.mtimes([opt_controls_branch[k, :], R, opt_controls_branch[k, :].T]) ) #+ 100000 * opt_epsilon_o[k] 
             
@@ -340,11 +341,11 @@ class MM_CBS(MPC_Base):
         pol_gains ={obs_idx: {j: None for j in n_modes[obs_idx]} for obs_idx in obs_set}
          
         for obs_idx, modes in n_modes.items():  
-            for j in range(modes):
+            for j in modes:
                 if self.feedback:
-                    K = K_rob_horizon+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
+                    K = K_rob_horizon[obs_idx]+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
                 else: 
-                    K = K_rob_horizon+[ca.DM(2,2) for t in range(self.N-self.robust_horizon)] 
+                    K = K_rob_horizon[obs_idx]+[ca.DM(2,2) for t in range(self.N-self.robust_horizon)] 
                 
                 K_stack = ca.diagcat(ca.DM(2,2),*[K[t] for t in range(self.N-1)])
                 
@@ -374,8 +375,11 @@ class MM_CBS(MPC_Base):
                     # Collision_avoidance for o0 in j_0 :   ||Ax+B*policy  - o0[j0]|| > d_min   for all  modes of o1: [j_1, j'_1,......] (MM-mpc) / for all modes of o1 in constraints (MM_CBS)
                     
                     other_obs_modes = {o_idx: m for o_idx, m in n_modes.items() if o_idx!=obs_idx}
-                    
-                    obs_mode_combinations = list(product(j,*[other_obs_modes[obs] for obs in other_obs_modes.keys()]))
+                   
+                    if [other_obs_modes[obs] for obs in other_obs_modes.keys()] == []:
+                        obs_mode_combinations = [[j]]
+                    else:
+                        obs_mode_combinations = list(product(j,*[other_obs_modes[obs] for obs in other_obs_modes.keys()]))
                     obs_list = [obs_idx]+list(other_obs_modes.keys())
                     for combination in obs_mode_combinations:
                         #combination = [j, one mode each of other obstacles in constraints list]
@@ -427,8 +431,10 @@ class MM_CBS(MPC_Base):
 
             u_res = [ sol.value(control.reshape((-1,self.N)).T) for control in opt_controls]
             self.feedforward = sol.value(u_ff)
+            
             for obs_idx, modes in n_modes.items():
                 for mode in modes:
+                    
                     self.feedback_gains[obs_idx][mode] = sol.value(pol_gains[obs_idx][mode]).toarray()
                     self.feedback_bias[obs_idx][mode]  = sol.value(opt_controls_h[obs_idx][mode]).toarray()
                    
@@ -441,15 +447,15 @@ class MM_CBS(MPC_Base):
             # next_states_pred = sol.value(opt_states)
             next_states_pred = [[ca.DM(current_state).T] for j in range(1)]
 
-            for j in range(1):
-                for t in range(u_res[0].shape[0]):
-                    next_states_pred[j].append(self.model.fCd(next_states_pred[j][-1], u_res[j][t,:]).T)
-                next_states_pred[j] = ca.vertcat(*next_states_pred[j])
+            
+            for t in range(u_res[0].shape[0]):
+                next_states_pred[0].append(self.model.fCd(next_states_pred[0][-1],self.feedforward[t,:]).T)
+            next_states_pred[0] = ca.vertcat(*next_states_pred[0])
             # eps_o = sol.value(opt_epsilon_o)
             
             
-            self.prev_states[agent_id] = next_states_pred
-            self.prev_controls[agent_id] = u_res
+            self.prev_states[agent_id] = next_states_pred[0]
+            self.prev_controls[agent_id] = self.feedforward
             self.prev_pol = pol_gains
             
             # self.prev_epsilon_o[agent_id] = eps_o 
@@ -467,7 +473,7 @@ class MM_CBS(MPC_Base):
         self.setup_visualization()
         # self.setup_visualization_heatmap()
         
-        
+        self.obs_mode_combinations = list(product(*[list(range(self.num_modes)) for obs in range(self.n_obs)]))
         # parallelized implementation
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
@@ -481,26 +487,24 @@ class MM_CBS(MPC_Base):
             self.gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_uncontrolled_state)
             noise_chars = self.uncontrolled_fleet.get_gmm_predictions()
             mode_prob = [self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep] for obs_idx in range(self.n_obs)]
-            #  mode_prob_eg = [(0.9, 0.1), (0.5, 0.5)]
             
-            obs_mode_combinations = list(product(*[list(range(self.num_modes)) for obs in range(self.n_obs)]))
-            
-            probs_combinations_unsorted = [ m.prod([mode_prob[k][mode_conf[k]] for k in range(self.n_obs)])  for mode_conf in obs_mode_combinations]
+           
+            probs_combinations_unsorted = [ m.prod([mode_prob[k][mode_conf[k]] for k in range(self.n_obs)])  for mode_conf in self.obs_mode_combinations]
             mode_prob_combinations = sorted(enumerate(probs_combinations_unsorted), key=lambda x: -x[1])    # mode_conf = [1,1] ==> [0.1, 0.5]
             
-            
+            #  mode_prob_eg = [(0.9, 0.1), (0.5, 0.5)]
             # [[0,0]:0.45, [0,1]:0.45, [1,0]:0.05, [1,1]:0.05] ====> [[0,0], [0,1]]  ===> 0.9
             n_mode_confs = 1
             prob_sum = mode_prob_combinations[0][1]
             
-            mode_conf_idx =[mode_prob_combinations[0][0]]
-            for i in range(1,len(obs_mode_combinations)):
+            self.mode_conf_idx =[mode_prob_combinations[0][0]]
+            for i in range(1,len(self.obs_mode_combinations)):
                 if prob_sum >= self.prob_thresh:
                     break
                 else:
                     prob_sum +=mode_prob_combinations[i][1]
                     n_mode_confs += 1
-                    mode_conf_idx.append(mode_prob_combinations[i][0])
+                    self.mode_conf_idx.append(mode_prob_combinations[i][0])
       
             self.obs_affine_model ={obs_idx: {mode: {'T': None, 'c':None, 'E':None, 'covars':None} for mode in range(len(self.gmm_predictions[obs_idx]))} for obs_idx in range(self.n_obs)}
             
@@ -517,16 +521,17 @@ class MM_CBS(MPC_Base):
                     self.obs_affine_model[obs_idx][mode].update({'T': T_o, 'c':c_o, 'E':E_o, 'covars':obs_xy_cov})
                 
             A, B, C, E = self._get_robot_ATV_dynamics(np.array(self.current_state[0]))
-            import pdb; pdb.set_trace()
+      
             self.rob_affine_model ={'A': A, 'B':B, 'C':C, 'E':E}
     
             # Apply MPC solve to each agent in parallel
             self.reference_x, self.reference_u = None, None
-            results = [self.run_single_mpc(0, np.array(self.current_state[0]), [])]
+            results = [self.run_single_mpc(0, np.array(self.current_state[0]), {})]
                   
             
             
-            self.reference_x, self.reference_u =self.prev_states[0][0], self.prev_controls[0][0]
+            self.reference_x, self.reference_u =self.prev_states[0], self.prev_controls[0]
+          
             A, B, C, E = self._get_robot_ATV_dynamics(np.array(self.current_state[0]), self.reference_x, self.reference_u)
             self.rob_affine_model ={'A': A, 'B':B, 'C':C, 'E':E}
             # results = pool.starmap(self.run_single_mpc, [(agent_id, np.array(self.current_state[agent_id]), []) for agent_id in range(self.num_agent)])
@@ -592,10 +597,10 @@ class MM_CBS(MPC_Base):
             if len(conflicts)> 0:
                 obs_constraints[obs_id].append([c[-1] for c in conflicts if c[1]==obs_id])
             
-            MPC_constraints = {agent_id : []}
-            node = MM_Node(0, {"states": self.prev_states[0], "controls":self.prev_controls[0], "pol_gains":self.feedback_gains, "pol_bias":self.feedback_bias},
-                                conflicts,
-                                resolved, MPC_constraints)   
+            MPC_constraints = obs_constraints
+            node = MM_Node(0, rob_sol,
+                            conflicts,
+                            resolved, MPC_constraints)   
 
             tree = [node]
             # tree[node.node_id]=node
@@ -618,18 +623,42 @@ class MM_CBS(MPC_Base):
                 
                 self.success = False
                 
-                agent_id, mode, obstacle =  conflicts[-1]
                 
-                MPC_constraints = {agent_id: node.constraints[agent_id].append((obstacle, mode))}
-                import pdb; pdb.set_trace()
-                self.run_single_mpc(agent_id, MPC_constraints)
+                conflict_obs_ids = [c[1] for c in conflicts]
+                obs_dist = 1000
+                obs_id = 0
+                for i in conflict_obs_ids:
+                    dist  = np.linalg.norm(np.array(self.current_state[0][:2])-np.array(current_uncontrolled_state[i])[:2])
+                    if dist < obs_dist:
+                        obs_dist = min(obs_dist, dist )
+                        obs_id = i
+                        
+                new_MPC_constraints = copy.copy(node.constraints)
+                # tag: "old" denotes constraints that are inherited. tag" "new" denotes constraints added from the conflict list 
+                new_MPC_constraints = { obs: [(mode[0], "old") for mode in new_MPC_constraints[obs]]   for obs in new_MPC_constraints}
+                if obs_id in new_MPC_constraints:
+                    new_MPC_constraints[obs_id]+=[(mode[0], "new") for mode in new_MPC_constraints[obs_id]]
+                else:
+                    new_MPC_constraints[obs_id]=[(c[-1], "new") for c in conflicts if c[1]==obs_id]            
+            
+                self.run_single_mpc(0, np.array(self.current_state[0]), new_MPC_constraints)
+           
+                rob_sol ={'states': self.prev_states[0], 'controls': self.prev_controls[0], 'pol_gains':self.feedback_gains, 'pol_bias':self.feedback_bias}
                 
-                rob_sol ={'states': self.prev_states[agent_id], 'controls': self.prev_controls[agent_id], 'pol_gains':self.feedback_gains}
-                new_conflicts, new_resolved, collision_prob = self._collision_check(agent_id, rob_sol, 0, obs_pred)
+                obs_constraints = {obs_idx: [] for obs_idx in range(self.n_obs)}
+                
+            
+                obs_id = 0
+                conflicts, resolved, collision_prob = self._collision_check(0,  rob_sol, obs_id, obs_pred, obs_constraints)
+                
+                while len(conflicts)==0 and obs_id < self.n_obs:
+                    obs_id+=1
+                    conflicts, resolved, collision_prob = self._collision_check(0,  rob_sol, obs_id, obs_pred, obs_constraints)
+                
                 
                 print(f"Collision probs: {collision_prob}")
                 
-                new_node = MM_Node(len(tree), rob_sol, new_conflicts, new_resolved, collision_prob)
+                new_node = MM_Node(len(tree), rob_sol, conflicts, resolved, new_MPC_constraints)
                 tree.append(new_node)
             
             
