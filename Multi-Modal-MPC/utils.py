@@ -336,51 +336,81 @@ def get_obstacle_coordinates(occupancy_grid, current_position):
 
 def summarize_algorithm_comparison_results(folder_path):
     results = {}
+    errors = {}  # Dictionary to store errors
+
     for subfolder in os.listdir(folder_path):
         if os.path.isdir(os.path.join(folder_path, subfolder)):
             parts = subfolder.split('_')
             algorithm = parts[0]
             noise_level = parts[2]
 
-            infeasible_count = 0
-            num_timesteps = 0
-            avg_comp_time = 0
-            max_comp_time = 0
-            control_mag_avg = 0
-            num_trials = 0
+            # Lists to store individual values for calculating standard deviation
+            infeasible_ratios = []
+            task_completion_times = []
+            avg_comp_times = []
+            max_comp_times = []
+            control_mag_avgs = []
 
+            num_trials = 0
+            success = 0
             for file in os.listdir(os.path.join(folder_path, subfolder)):
                 if file.endswith('.pkl'):
                     with open(os.path.join(folder_path, subfolder, file), 'rb') as f:
                         data = pickle.load(f)
-                        num_timesteps += data['num_timesteps']
-                        infeasible_count += data['infeasible_count']
-                        avg_comp_time += np.mean(data['avg_comp_time'])
-                        max_comp_time += np.mean(data['max_comp_time'])
-                        control_mag_avg += np.linalg.norm(data['control_cache'][0][1])
+                        success += data['success']
+                        num_timesteps = data['num_timesteps']
+                        infeasible_count = data['infeasible_count']
+                        avg_comp_time = np.mean(data['avg_comp_time'])
+                        max_comp_time = np.max(data['max_comp_time'])
+                        control_mag_avg = np.linalg.norm(data['control_cache'][0][1])
+
+                        # Store individual values
+                        infeasible_ratios.append(infeasible_count / num_timesteps)
+                        task_completion_times.append(num_timesteps * 0.2)
+                        avg_comp_times.append(avg_comp_time)
+                        max_comp_times.append(max_comp_time)
+                        control_mag_avgs.append(control_mag_avg)
+
                         num_trials += 1
 
-            # Calculate averages and ratios
-            infeasible_ratio = infeasible_count / num_timesteps 
-            task_completion_time = (num_timesteps / num_trials) * 0.2
-            avg_comp_time = avg_comp_time / num_trials
-            max_comp_time = max_comp_time / num_trials
-            control_mag_avg = control_mag_avg / num_trials
+            # Calculate averages
+            infeasible_ratio = np.mean(infeasible_ratios)
+            task_completion_time = np.mean(task_completion_times)
+            avg_comp_time = np.mean(avg_comp_times)
+            max_comp_time = np.mean(max_comp_times)
+            control_mag_avg = np.mean(control_mag_avgs)
+            success_rate = success / num_trials
 
-            # Initialize dictionary structure if needed
+            # Calculate standard deviations
+            infeasible_ratio_error = np.std(infeasible_ratios)
+            task_completion_time_error = np.std(task_completion_times)
+            avg_comp_time_error = np.std(avg_comp_times)
+            max_comp_time_error = np.std(max_comp_times)
+            control_mag_avg_error = np.std(control_mag_avgs)
+
+            # Initialize dictionary structures if needed
             if noise_level not in results:
                 results[noise_level] = {}
+                errors[noise_level] = {}
             if algorithm not in results[noise_level]:
                 results[noise_level][algorithm] = {}
+                errors[noise_level][algorithm] = {}
 
-            # Store metrics in the dictionary
+            # Store metrics and errors in the dictionaries
             results[noise_level][algorithm]['infeasible_ratio'] = infeasible_ratio
             results[noise_level][algorithm]['task_completion_time'] = task_completion_time
             results[noise_level][algorithm]['avg_comp_time'] = avg_comp_time
             results[noise_level][algorithm]['max_comp_time'] = max_comp_time
             results[noise_level][algorithm]['control_mag_avg'] = control_mag_avg
+            results[noise_level][algorithm]['success_rate'] = success_rate
 
-    return results
+            errors[noise_level][algorithm]['infeasible_ratio'] = infeasible_ratio_error
+            errors[noise_level][algorithm]['task_completion_time'] = task_completion_time_error
+            errors[noise_level][algorithm]['avg_comp_time'] = avg_comp_time_error
+            errors[noise_level][algorithm]['max_comp_time'] = max_comp_time_error
+            errors[noise_level][algorithm]['control_mag_avg'] = control_mag_avg_error
+
+    return results, errors
 
 def summarize_ablation_comparison_results(folder_path):
     results = {}
@@ -393,9 +423,10 @@ def summarize_ablation_comparison_results(folder_path):
 
             infeasible_count = 0
             num_timesteps = 0
-            avg_comp_time = 0
-            max_comp_time = 0
+            comp_times = []  # List to store all avg_comp_time values
+            max_comp_times = []  # List to store all max_comp_time values
             control_mag_avg = 0
+            task_completion_times = []  # List to store all task_completion_time values
             num_trials = 0
 
             for file in os.listdir(os.path.join(folder_path, subfolder)):
@@ -404,16 +435,21 @@ def summarize_ablation_comparison_results(folder_path):
                         data = pickle.load(f)
                         num_timesteps += data['num_timesteps']
                         infeasible_count += data['infeasible_count']
-                        avg_comp_time += np.mean(data['avg_comp_time'])
-                        max_comp_time += np.mean(data['max_comp_time'])
+                        comp_times.append(np.mean(data['avg_comp_time']))  # Add to list
+                        max_comp_times.append(np.mean(data['max_comp_time']))  # Add to list
                         control_mag_avg += np.linalg.norm(data['control_cache'][0][1])
+                        # Calculate and store task completion time for this trial
+                        task_completion_times.append((data['num_timesteps'] * 0.2))
                         num_trials += 1
 
-            # Calculate averages and ratios
-            infeasible_ratio = infeasible_count / num_timesteps 
-            task_completion_time = (num_timesteps / num_trials) * 0.2
-            avg_comp_time = avg_comp_time / num_trials
-            max_comp_time = max_comp_time / num_trials
+            # Calculate averages and standard deviations
+            infeasible_ratio = infeasible_count / num_timesteps if num_timesteps > 0 else 0
+            avg_comp_time = np.mean(comp_times)
+            std_avg_comp_time = np.std(comp_times)
+            max_comp_time = np.mean(max_comp_times)
+            std_max_comp_time = np.std(max_comp_times)
+            avg_task_completion_time = np.mean(task_completion_times)
+            std_task_completion_time = np.std(task_completion_times)
             control_mag_avg = control_mag_avg / num_trials
 
             # Initialize dictionary structure if needed
@@ -424,11 +460,14 @@ def summarize_ablation_comparison_results(folder_path):
             if algorithm not in results[noise_level][branch_time]:
                 results[noise_level][branch_time][algorithm] = {}
 
-            # Store metrics in the dictionary
+            # Store metrics and their standard deviations in the dictionary
             results[noise_level][branch_time][algorithm]['infeasible_ratio'] = infeasible_ratio
-            results[noise_level][branch_time][algorithm]['task_completion_time'] = task_completion_time
+            results[noise_level][branch_time][algorithm]['task_completion_time'] = avg_task_completion_time
+            results[noise_level][branch_time][algorithm]['std_task_completion_time'] = std_task_completion_time
             results[noise_level][branch_time][algorithm]['avg_comp_time'] = avg_comp_time
+            results[noise_level][branch_time][algorithm]['std_avg_comp_time'] = std_avg_comp_time
             results[noise_level][branch_time][algorithm]['max_comp_time'] = max_comp_time
+            results[noise_level][branch_time][algorithm]['std_max_comp_time'] = std_max_comp_time
             results[noise_level][branch_time][algorithm]['control_mag_avg'] = control_mag_avg
 
     return results
@@ -455,83 +494,114 @@ def compute_average_norm(feedback_gain_map):
     
     return average_norm
 
-def plot_algorithm_comparison_results(results):
-    algorithm_order = ["MM-MPC", "Branch-MPC", "Robust-MPC"]
-    data_types = ['infeasible_ratio', 'task_completion_time', 'avg_comp_time', 'max_comp_time', 'control_mag_avg']
-    colors = ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7']
-    titles = ["Infeasible Solve Ratio", "Task Completion Time", "Average Computation Time", "Max Computation Time", "Average Velocity"]
+def plot_algorithm_comparison_results(results, errors):
+    algorithm_order = ["MM-MPC", "MLE-MPC", "Branch-MPC", "Robust-MPC"]
+    data_types = ['infeasible_ratio', 'task_completion_time', 'avg_comp_time', 'max_comp_time', 'control_mag_avg', 'success_rate']
+    colors = ['#2E86AB', '#D7263D', '#44A08D', '#F2C14E', '#F29F05', '#A23B72', '#75B1A9']
+    # colors = ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7']
+    titles = ["Infeasible Solve Ratio", "Task Completion Time", "Average Computation Time", "Max Computation Time", "Average Velocity", "Success_rate"]
 
-    # Sort the noise levels in increasing order and ensure they are unique
     noise_levels = sorted({float(noise_level) for noise_level in results.keys()})
     n_groups = len(noise_levels)
     n_algorithms = len(algorithm_order)
-    bar_width = 0.5 / n_algorithms  # Adjust the width to fit all bars
-    offset = (1 - 0.5) / 2  # Centering offset
+    bar_width = 0.5 / n_algorithms
+    offset = (1 - 0.5) / 2
 
-    for i , data_type in enumerate(data_types):
-        fig, ax = plt.subplots()
+    for i, data_type in enumerate(data_types):
+        fig, ax = plt.subplots(figsize=(8, 8))
         index = np.arange(n_groups)
 
+        plt.rcParams['font.size'] = 18  # Change default font size
+
         for j, algorithm in enumerate(algorithm_order):
-            # Collect data for this algorithm across all noise levels for the specific data type
             performance = []
+            error_values = []  # Store the standard deviations or errors here
             for noise_level in noise_levels:
-                if algorithm in results[str(noise_level)]:
-                    performance.append(results[str(noise_level)][algorithm].get(data_type, 0))
+                data_key = str(noise_level)
+                if algorithm in results[data_key]:
+                    performance.append(results[data_key][algorithm].get(data_type, 0))
+                    error_values.append(errors[data_key][algorithm].get(data_type, 0))  # Get the corresponding error
                 else:
                     performance.append(0)
-            bar_positions = index + offset + j * bar_width
-            plt.bar(bar_positions, performance, bar_width, label=algorithm, color=colors[j % len(colors)])
+                    error_values.append(0)
 
-        # Configure the plot
-        plt.xlabel('Noise Level')
-        plt.ylabel(data_type.replace('_', ' ').title())
-        plt.title(titles[i])
-        # plt.title(f'{data_type.replace("_", " ").title()}')
+            bar_positions = index + offset + j * bar_width
+            plt.bar(bar_positions, performance, bar_width, label=algorithm, color=colors[j % len(colors)], yerr=error_values, capsize=5)
+            plt.xticks(fontsize=16) 
+            plt.yticks(fontsize=16) 
+
+        plt.xlabel('Noise Level', fontsize=20)
+        plt.ylabel(data_type.replace('_', ' ').title(), fontsize=20)
+        plt.title(titles[i], fontsize=18)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         plt.xticks(index + 0.4, [str(n) for n in noise_levels])
-        plt.legend()
+        plt.ylim(0,0.25)
+        # plt.legend(frameon=False, facecolor='none')
 
         plt.tight_layout()
         plt.show()
 
 def plot_ablation_comparison_results(results):
-    metrics = ['infeasible_ratio', 'avg_comp_time', 'max_comp_time', 'control_mag_avg']
+    metrics = ['task_completion_time', 'infeasible_ratio']
+    colors = ['#2E86AB', '#D7263D', '#44A08D', '#F29F05', '#A23B72', '#75B1A9']
     algorithms = set(alg for noise_level in results.values() for branch_time in noise_level.values() for alg in branch_time)
     
+    bar_width = 0.1  # Width of the bars in the bar chart
     for algorithm in algorithms:
+        print(algorithm)
         for metric in metrics:
-            plt.figure(figsize=(10, 8))
+            plt.figure(figsize=(8, 8))
+            plt.rcParams['font.size'] = 16  # Change default font size
             
-            # Prepare data: Collect all values for each branching time across noise levels
             data_for_plot = {}
+            error_data = {}  # New dictionary to store error data
             for noise_level in sorted(results, key=lambda x: float(x)):
                 for branch_time in results[noise_level]:
                     if algorithm in results[noise_level][branch_time]:
                         if branch_time not in data_for_plot:
                             data_for_plot[branch_time] = []
+                            error_data[branch_time] = []  # Initialize list for error data
                         value = results[noise_level][branch_time][algorithm][metric]
+                        std_value = results[noise_level][branch_time][algorithm].get(f'std_{metric}', 0)  # Get std deviation
                         data_for_plot[branch_time].append((float(noise_level), value))
+                        error_data[branch_time].append((float(noise_level), std_value))  # Append std deviation
             
-            # Sort data for plotting to ensure noise levels are in increasing order
             for branch_time in data_for_plot:
                 data_for_plot[branch_time].sort(key=lambda x: x[0])
+                error_data[branch_time].sort(key=lambda x: x[0])  # Sort error data
             
-            # Plotting
-            for branch_time, values in data_for_plot.items():
-                # Unzip the sorted tuples into two lists for plotting
+            unique_branch_times = sorted(data_for_plot.keys(), key=lambda x: float(x))
+            num_branch_times = len(unique_branch_times)
+            
+            for idx, branch_time in enumerate(unique_branch_times):
+                values = data_for_plot[branch_time]
+                errors = error_data[branch_time]  # Extract error values
                 noise_levels, metric_values = zip(*values)
-                plt.plot(noise_levels, metric_values, label=f'BT = {branch_time}', linewidth=2)
+                _, std_values = zip(*errors)  # Only need the std deviation values
+                
+                offsets = np.arange(len(noise_levels))
+                center_adjustment = (bar_width * num_branch_times) / 2 - (bar_width / 2)
+                positions = offsets - center_adjustment + idx * bar_width
+                
+                plt.bar(positions, metric_values, width=bar_width, color=colors[idx % len(colors)], label=f'BT = {branch_time}', yerr=std_values, capsize=5)  # Add error bars
             
-            desc = metric + "_" + algorithm
-            plt.title(desc)
-            plt.xlabel('Noise Level')
-            plt.ylabel(desc)
+            plt.title(f"{metric.replace('_', ' ').title()} at Different Branching Times", fontsize=18)
+            plt.xlabel('Noise Level', fontsize=18)
+            plt.xticks(offsets, labels=[str(nl) for nl in noise_levels], fontsize=12)
+            plt.ylabel(metric.replace('_', ' ').title(), fontsize=18)
             plt.legend()
+
+            # Remove right and top borders
+            ax = plt.gca()  # Get current axes
+            ax.spines['right'].set_visible(False)
+            ax.spines['top'].set_visible(False)
+
             plt.show()
 
 def animate_trial(folder_name, trial_number):
     # Construct the file path
-    file_path = f"mm_results_arch/{folder_name}/trial_{trial_number}.pkl"
+    file_path = f"mm_results/{folder_name}/trial_{trial_number}.pkl"
         
     # Load the pickle file
     with open(file_path, 'rb') as file:
@@ -545,12 +615,16 @@ def animate_trial(folder_name, trial_number):
 
     # Set up the figure and subplots
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+
+    fig.suptitle('Execution Results for Robust-MPC')
     
     # Initial setup for state plot
     ax1.set_xlim(-5, 5)
     ax1.set_ylim(-5, 5)
     ax1.axvline(x=-1, color='k', linestyle='--', linewidth=2)
     ax1.axvline(x=1, color='k', linestyle='--', linewidth=2)
+    ax1.set_xlabel('X') 
+    ax1.set_ylabel('Y')
     controlled_circle = plt.Circle((0, 0), 0.3, fill=True, color='blue', label='Controlled Agent')
     uncontrolled_circle = plt.Circle((0, 0), 0.3, fill=True, color='red', label='Uncontrolled Agent')
     ax1.add_patch(controlled_circle)
@@ -563,7 +637,7 @@ def animate_trial(folder_name, trial_number):
     # Predictions visualization setup
     prediction_lines = []
     for mode in range(len(predictions)):
-        line, = ax1.plot([], [], 'g', linewidth=2)  # Green dashed line for predictions
+        line, = ax1.plot([], [], 'k', linewidth=2)
         prediction_lines.append(line)
 
     # Initial setup for control plot
@@ -571,6 +645,8 @@ def animate_trial(folder_name, trial_number):
     control_data = {'frames': [], 'values': []}  # Initialize the dictionaries to store control plot data
 
     ax2.set_xlim(0, len(state_cache))  # Assuming frames equal the length of state_cache
+    ax2.set_xlabel("Timestep")
+    ax2.set_ylabel("Velocity [m/s]")
 
     def update(frame):
         # Update state plot for controlled agent
@@ -616,4 +692,71 @@ def animate_trial(folder_name, trial_number):
     # writer = PillowWriter(fps=30)  # Adjust fps as needed
     # ani.save(animation_file_name, writer=writer)   
    
+    plt.show()
+
+def plot_key_timesteps(folder_name, trial_number, key_timesteps):
+    # Construct the file path
+    file_path = f"mm_results/{folder_name}/trial_{trial_number}.pkl"
+    
+    # Load the pickle file
+    with open(file_path, 'rb') as file:
+        data = pickle.load(file)
+    
+    # Extract necessary data
+    state_cache = data['state_cache'][0]
+    uncontrolled_traj = data['uncontrolled_fleet_data'][0]['executed_traj']
+    # predictions = data['uncontrolled_fleet_data'][0]['predictions']
+
+    # Initialize lists to store trajectory points
+    controlled_traj_x = []
+    controlled_traj_y = []
+    uncontrolled_traj_x = []
+    uncontrolled_traj_y = []
+
+    # Set up the figure
+    fig, ax = plt.subplots(figsize=(8,8))
+
+    plt.title('Robust-MPC', fontsize=18)
+    ax.set_xlim(-5, 5)
+    ax.set_ylim(-5, 5)
+    ax.axvline(x=-1, color='k', linestyle='--', linewidth=2)
+    ax.axvline(x=1, color='k', linestyle='--', linewidth=2)
+    # ax.set_xlabel('X')
+    # ax.set_ylabel('Y')
+
+    # Plot each key timestep
+    for i, frame in enumerate(key_timesteps):
+        # Calculate transparency based on the timestep's position in the list
+        alpha = (i + 1) / len(key_timesteps)
+
+        # Controlled agent (Robot)
+        x, y, _ = state_cache[frame]
+        controlled_circle = plt.Circle((x, y), 0.3, fill=True, color='blue', alpha=alpha, label='Controlled Agent' if i == 0 else "")
+        ax.add_patch(controlled_circle)
+        controlled_traj_x.append(x)
+        controlled_traj_y.append(y)
+
+        # Uncontrolled agent (Pedestrian)
+        ux, uy, _ = uncontrolled_traj[frame]
+        uncontrolled_circle = plt.Circle((ux, uy), 0.3, fill=True, color='red', alpha=alpha, label='Uncontrolled Agent' if i == 0 else "")
+        ax.add_patch(uncontrolled_circle)
+        uncontrolled_traj_x.append(ux)
+        uncontrolled_traj_y.append(uy)
+
+        # Plot trajectories
+        ax.plot(controlled_traj_x, controlled_traj_y, color='blue', alpha=0.5, linewidth=2)
+        ax.plot(uncontrolled_traj_x, uncontrolled_traj_y, color='red', alpha=0.5, linewidth=2)
+
+        ax.axis('Off')
+
+          # Plot lane boundaries
+        ax.axvline(x=-1, color='k', linestyle='--', linewidth=2)
+        ax.axvline(x=1, color='k', linestyle='--', linewidth=2)
+
+
+    # # Adding legend only once
+    # handles, labels = ax.get_legend_handles_labels()
+    # if handles:
+    #     ax.legend(handles=handles[:2], labels=labels[:2])
+
     plt.show()

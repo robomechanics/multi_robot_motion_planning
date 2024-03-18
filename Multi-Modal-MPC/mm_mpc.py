@@ -110,6 +110,29 @@ class MM_MPC(MPC_Base):
         current_state_obs_vector = [self.uncontrolled_fleet_data[obs]['executed_traj'][self.num_timestep] for obs in range(len(self.uncontrolled_fleet_data))]
         gmm_predictions_vector = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs_vector)
         noise_chars = self.uncontrolled_fleet.get_gmm_predictions()
+        mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
+
+        filtered_predictions_vector = []
+        filtered_noise_chars = []
+
+        if self.mle:
+            for agent_idx, (agent_predictions, agent_noise) in enumerate(zip(gmm_predictions_vector, noise_chars)):
+                # Assuming mode_prob[agent_idx] gives us the most likely mode index for the agent
+                most_likely_mode = mode_prob[agent_idx]
+                
+                # Ensure most_likely_mode is an integer, as expected
+                most_likely_mode = int(most_likely_mode)
+                
+                # Filter the predictions and noise characteristics to keep only those related to the most likely mode
+                most_likely_mode_prediction = {most_likely_mode: agent_predictions[most_likely_mode]}
+                most_likely_mode_noise = {most_likely_mode: agent_noise[most_likely_mode]}
+                
+                # Append these filtered predictions and noise characteristics to the new lists
+                filtered_predictions_vector.append(most_likely_mode_prediction)
+                filtered_noise_chars.append(most_likely_mode_noise)
+        else:
+            filtered_predictions_vector = gmm_predictions_vector
+            filtered_noise_chars = noise_chars
 
         ####
         # EV feedforward + TV state feedback policies from https://arxiv.org/abs/2109.09792
@@ -160,10 +183,11 @@ class MM_MPC(MPC_Base):
         
         ref = np.array(self.extract_trajectory_segment(self.current_state[0])[0])
 
-        mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
         for j in range(self.num_modes):
             for k in range(self.N):
-                mode_weight = mode_prob[j]
+                mode_weight = 1
+                if not self.mle:
+                    mode_weight = mode_prob[j]
                 # if k > self.robust_horizon:
                 # robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]-opt_xs.T), Q, (opt_states[j][k, :]-opt_xs.T).T] 
                 #             )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) + 100000 * opt_epsilon_r[j][k]) #+ 100000 * opt_epsilon_o[k]
@@ -202,7 +226,7 @@ class MM_MPC(MPC_Base):
         else:
             K_rob_horizon = [ca.DM(2,2) for t in range(self.robust_horizon-1)]
         
-        for agent_prediction, agent_noise in zip(gmm_predictions_vector, noise_chars):
+        for agent_prediction, agent_noise in zip(filtered_predictions_vector, filtered_noise_chars):
             T_obs_k, c_obs_k, E_obs_k=[], [], []
             pol_gains_k=[]
 
@@ -236,7 +260,7 @@ class MM_MPC(MPC_Base):
             c_obs.append(c_obs_k)
             E_obs.append(E_obs_k)
 
-        for k, agent_prediction in enumerate(gmm_predictions_vector):
+        for k, agent_prediction in enumerate(filtered_predictions_vector):
             for j, prediction in agent_prediction.items():
                 for t in range(1,self.N):
                     if self.linearized_ca:
@@ -276,27 +300,27 @@ class MM_MPC(MPC_Base):
                         # opti.subject_to(nom_dist>=-opt_epsilon_r[j][t-1])
                         opti.subject_to(nom_dist>=0)
 
-                    else:
-                        tv_pos   = ca.DM(prediction['means'][t-1][:2])
-                        ##### Get chance constraints from the given GMM prediction
-                        ## aij =(pi + Eini - pj- Ejnj)  and bij = ri + rj 
-                        ##     P[ aij^T@aij <= bij**2 ]< eps  
-                        ## <==>P[([ni;nj].T M[ni;nj] - Tr([I -I].T@[I -I]) <= -((pi-pj)^T@(pi-pj)+Tr(M)-bij**2)] < eps     
-                        ##  ==> Var([ni;nj].T M[ni;nj]) < =eps*{Var([ni;nj].T M[ni;nj]) +  ( (pi-pj)^T@(pi-pj) + Tr(M)  -bij**2)**2)          
-                        ###    Last inequality by Cantelli's : https://en.wikipedia.org/wiki/Cantelli%27s_inequality) 
-                        pi = ca.vec(opt_states[j][t,:2])
-                        pj = ca.vec(tv_pos)
+                    # else:
+                    #     tv_pos   = ca.DM(prediction['means'][t-1][:2])
+                    #     ##### Get chance constraints from the given GMM prediction
+                    #     ## aij =(pi + Eini - pj- Ejnj)  and bij = ri + rj 
+                    #     ##     P[ aij^T@aij <= bij**2 ]< eps  
+                    #     ## <==>P[([ni;nj].T M[ni;nj] - Tr([I -I].T@[I -I]) <= -((pi-pj)^T@(pi-pj)+Tr(M)-bij**2)] < eps     
+                    #     ##  ==> Var([ni;nj].T M[ni;nj]) < =eps*{Var([ni;nj].T M[ni;nj]) +  ( (pi-pj)^T@(pi-pj) + Tr(M)  -bij**2)**2)          
+                    #     ###    Last inequality by Cantelli's : https://en.wikipedia.org/wiki/Cantelli%27s_inequality) 
+                    #     pi = ca.vec(opt_states[j][t,:2])
+                    #     pj = ca.vec(tv_pos)
 
-                        joint_rv = ca.horzcat(E_rob[j][t*3:(t+1)*3-1,:],*[B_rob[j][t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][:-2,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(n_obs)])
-                        joint_cov = joint_rv.T@joint_rv
+                    #     joint_rv = ca.horzcat(E_rob[j][t*3:(t+1)*3-1,:],*[B_rob[j][t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][:-2,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(n_obs)])
+                    #     joint_cov = joint_rv.T@joint_rv
 
-                        tr_M_ = ca.trace(joint_cov)
-                        lmbd_ = (pi-pj).T@(pi-pj) + tr_M_ - 4*self.rob_dia**2
-                        Var_  = 2*ca.trace(joint_cov@joint_cov)
+                    #     tr_M_ = ca.trace(joint_cov)
+                    #     lmbd_ = (pi-pj).T@(pi-pj) + tr_M_ - 4*self.rob_dia**2
+                    #     Var_  = 2*ca.trace(joint_cov@joint_cov)
 
-                        rob_rob_constraint = self.delta*(Var_ + lmbd_**2) - Var_
-                        opti.subject_to(rob_rob_constraint >= -opt_epsilon_r[j][t-1])                        
-                        opti.subject_to(rob_rob_constraint >= 0)
+                    #     rob_rob_constraint = self.delta*(Var_ + lmbd_**2) - Var_
+                    #     opti.subject_to(rob_rob_constraint >= -opt_epsilon_r[j][t-1])                        
+                    #     opti.subject_to(rob_rob_constraint >= 0)
 
         # opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
         #                     'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9,
@@ -309,11 +333,11 @@ class MM_MPC(MPC_Base):
         opti.set_value(opt_xs, self.final_state[agent_id])
 
         # # set optimizing target withe init guess
-        for j in range(self.num_modes):
-            if type(self.prev_controls[agent_id])!=type([]):
-                opti.set_initial(opt_controls[j], self.prev_controls[agent_id])  # (N, 2)
-            else:
-                opti.set_initial(opt_controls[j], self.prev_controls[agent_id][j])
+        # for j in range(self.num_modes):
+        #     if type(self.prev_controls[agent_id])!=type([]):
+        #         opti.set_initial(opt_controls[j], self.prev_controls[agent_id])  # (N, 2)
+        #     else:
+        #         opti.set_initial(opt_controls[j], self.prev_controls[agent_id][j])
 
         u_res = None
         next_states_pred = None
@@ -325,9 +349,9 @@ class MM_MPC(MPC_Base):
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
             
-            for mode in range(self.num_modes):
-                self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
-                self.feedback_gains_cache[mode].append(sol.value(pol_gains[0][mode]).toarray())
+            # for mode in range(self.num_modes):
+            #     self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
+            #     self.feedback_gains_cache[mode].append(sol.value(pol_gains[0][mode]).toarray())
 
             # obtain the control input
             u_res = [sol.value(opt_controls[j]) for j in range(self.num_modes)]
@@ -352,7 +376,7 @@ class MM_MPC(MPC_Base):
         return u_res, next_states_pred
     
     def simulate(self):
-        # self.setup_visualization()
+        self.setup_visualization()
         # self.setup_visualization_heatmap()
         
         # parallelized implementation
@@ -376,7 +400,7 @@ class MM_MPC(MPC_Base):
 
             mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep] 
       
-            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions, mode_prob, ref=self.ref)
+            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions, mode_prob, ref=self.ref)
             # self.plot_feedback_gains()
 
             # Process the results and update the current state
@@ -413,7 +437,7 @@ class MM_MPC(MPC_Base):
             # self.traj_length = get_traj_length(self.state_cache)
             self.makespan = self.num_timestep * self.dt
             self.success = True
-            self.feedback_gain_avg = compute_average_norm(self.feedback_gains_cache)
+            # self.feedback_gain_avg = compute_average_norm(self.feedback_gains_cache)
         else:
             self.success = False
         

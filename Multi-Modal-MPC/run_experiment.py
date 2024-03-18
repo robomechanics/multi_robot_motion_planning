@@ -13,7 +13,7 @@ if __name__ == "__main__":
 
     cost_func_params = {
         'Q': np.array([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 2.0]]),
-        'R': np.array([[1.0, 0.0], [0.0, 1.0]]),
+        'R': np.array([[2.0, 0.0], [0.0, 0.5]]),
         'P': np.array([[15.0, 0.0], [0.0, 15.0]]),
         'Qc': 8,
         'kappa': 3 
@@ -43,44 +43,52 @@ if __name__ == "__main__":
     obstacle_density = 0.0
     # map = generate_map(map_size, 0)
 
-    num_trials = 10
-    algs = ["MM-MPC", "Branch-MPC"]
-    branch_times = [2, 4, 8, 12]
-    noise_levels = [0.1, 0.3, 0.5, 0.7]
+    num_trials = 30
+    # algs = ["MM-MPC", "MLE-MPC", "Branch-MPC", "Robust-MPC"]
+    algs = ["MM-MPC"]
+    branch_times = [2, 6, 12]
+    noise_levels = [0.2]
 
-    # results = summarize_algorithm_comparison_results("mm_results_arch")
-    # plot_algorithm_comparison_results(results)
+    # results, errors = summarize_algorithm_comparison_results("mm_results_arch")
+    # plot_algorithm_comparison_results(results, errors)
     
-    results = summarize_ablation_comparison_results("mm_results")
-    plot_ablation_comparison_results(results)
+    # results = summarize_ablation_comparison_results("mm_results")
+    # plot_ablation_comparison_results(results)
 
-    # animate_trial("MM-MPC_n_0.5", 4)
-    # for noise_level in noise_levels:
-    #     for bt in branch_times:
-    #         for trial in range(num_trials):
-    #             x_unc = random.uniform(-0.1, 0.1) 
-    #             y_unc = random.uniform(1.5, 3.0)
+    # animate_trial("MM-MPC_n_0.5_b_2", 1)
+    # plot_key_timesteps("Robust-MPC_n_0.1", 8, [1,5,10,15,20,25,30])
 
-    #             initial_states = [[random.uniform(-0.2, 0.2), random.uniform(-0.2, 0.2), np.pi/2]]
-    #             final_states = [[random.uniform(-0.2, 0.2), random.uniform(4.5, 5.0), np.pi/2]]
+    for noise_level in noise_levels:
+        for bt in branch_times:
+            for trial in range(num_trials):
+                initial_states = [[random.uniform(-0.1, 0.1), random.uniform(-0.1, 0.1), np.pi/2]]
+                final_states = [[random.uniform(-0.1, 0.1), random.uniform(4.5, 5.0), np.pi/2]]
                 
-    #             rx, ry, ryaw, rk, s = calc_spline_course([initial_states[0][0], final_states[0][0]], [initial_states[0][1], final_states[0][1]])
-    #             ref = [[x, y, yaw] for x, y, yaw in zip(rx, ry, ryaw)]
-
-    #             uncontrolled_fleet = UncontrolledAgent(init_state=[(x_unc, y_unc, 0.0)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=noise_level)
-    #             uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
+                x_unc = random.uniform(-0.1, 0.1) 
+                y_unc = random.uniform(2.5, 3.0) 
                 
-    #             for alg in algs:
-    #                 scenario = alg + "_" + "n_" + str(noise_level) + "_b_" + str(bt)
-    #                 if alg == "MM-MPC":
-    #                     mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=True, robust_horizon=bt, ref=ref)
-    #                     mpc.simulate()
-    #                 elif alg == "Branch-MPC":
-    #                     mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=False, robust_horizon=bt, ref=ref)
-    #                     mpc.simulate()
-    #                 else:
-    #                     mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=False, robust_horizon=mpc_params['N'], ref=ref)
-    #                     mpc.simulate()
+                uncontrolled_fleet = UncontrolledAgent(init_state=[(x_unc, y_unc, 0.0)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=noise_level)
+                uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
+                
+                for alg in algs:                
+                    # for bt in branch_times:          
+                    rx, ry, ryaw, rk, s = calc_spline_course([initial_states[0][0], final_states[0][0]], [initial_states[0][1], final_states[0][1]])
+                    ref = [[x, y, yaw] for x, y, yaw in zip(rx, ry, ryaw)]
+                    
+                    for alg in algs:
+                        scenario = alg + "_" + "n_" + str(noise_level) + "_b_" + str(bt)
+                        if alg == "MM-MPC":
+                            mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=True, robust_horizon=bt, ref=ref)
+                            mpc.simulate()
+                        elif alg == "Branch-MPC":
+                            mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=False, robust_horizon=2, ref=ref)
+                            mpc.simulate()
+                        elif alg == "MLE-MPC":
+                            mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=True, robust_horizon=mpc_params['N'], ref=ref, mle=True)
+                            mpc.simulate()
+                        else:
+                            mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=False, robust_horizon=mpc_params['N'], ref=ref)
+                            mpc.simulate()
 
                         
 

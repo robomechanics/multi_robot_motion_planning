@@ -9,7 +9,7 @@ from matplotlib.animation import FuncAnimation
 import seaborn as sns
 
 class MPC_Base:
-    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=None, ref=None, feedback=None, robust_horizon=None):
+    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=None, ref=None, feedback=None, robust_horizon=None, mle=False):
         self.num_agent = mpc_params['num_agents']
         self.dt = mpc_params['dt']
         self.N = mpc_params['N']
@@ -33,6 +33,7 @@ class MPC_Base:
         self.num_modes = 2
         self.robust_horizon = robust_horizon
         self.feedback = feedback
+        self.mle = mle
 
         self.model = DiffDrive(self.rob_dia)
 
@@ -295,12 +296,12 @@ class MPC_Base:
                     cbar.colorbar.remove()
 
             ax.clear()  # Clear the axes for the new heatmap
-            heatmap = sns.heatmap(gain_matrix, ax=ax, vmin=-10, vmax=10)
+            heatmap = sns.heatmap(np.abs(gain_matrix), ax=ax, vmin=0, vmax=10)
             ax.set_title("Feedback Gain for Mode " + str(mode))  # Set title for the heatmap
 
         self.fig.tight_layout()  # Adjust the layout
         plt.draw()
-        plt.pause(0.05)  # Pause for a brief moment
+        plt.pause(0.01)  # Pause for a brief moment
 
     def simulate(self):
         raise NotImplementedError("Subclasses must implement the functionality")
