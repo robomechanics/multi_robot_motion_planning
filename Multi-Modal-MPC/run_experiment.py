@@ -89,7 +89,3 @@ if __name__ == "__main__":
                         else:
                             mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=False, robust_horizon=mpc_params['N'], ref=ref)
                             mpc.simulate()
-
-                        
-
-
