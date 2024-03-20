@@ -109,7 +109,7 @@ class MM_MPC(MPC_Base):
 
     def run_single_mpc(self, agent_id, current_state, inter_rob_constraints, linearized_ca = False):
         # casadi parameters
-        opti = ca.Opti()
+        opti = ca.Opti('conic')
 
         # opt_states = opti.variable(self.N + 1, 3)
         # opt_x = opt_states[:,0]
@@ -311,7 +311,7 @@ class MM_MPC(MPC_Base):
                             'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
         # opts_setting = {'ipopt.print_level': 0, 'print_time': 0,}
         opti.minimize(total_cost)
-        opti.solver('ipopt', opts_setting)
+        opti.solver('osqp')
         opti.set_value(opt_xs, self.final_state[agent_id])
 
         # # set optimizing target withe init guess
