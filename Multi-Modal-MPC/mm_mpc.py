@@ -107,18 +107,18 @@ class MM_MPC(MPC_Base):
         # casadi parameters
         opti = ca.Opti('conic')
 
-        current_state_obs_vector = [self.uncontrolled_fleet_data[obs]['executed_traj'][self.num_timestep] for obs in range(len(self.uncontrolled_fleet_data))]
-        gmm_predictions_vector = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs_vector)
-        noise_chars = self.uncontrolled_fleet.get_gmm_predictions()
-        mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
+        # current_state_obs_vector = [self.uncontrolled_fleet_data[obs]['executed_traj'][self.num_timestep] for obs in range(len(self.uncontrolled_fleet_data))]
+        # gmm_predictions_vector = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs_vector)
+        # noise_chars = self.uncontrolled_fleet.get_gmm_predictions()
+        # mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
 
         filtered_predictions_vector = []
         filtered_noise_chars = []
 
         if self.mle:
-            for agent_idx, (agent_predictions, agent_noise) in enumerate(zip(gmm_predictions_vector, noise_chars)):
+            for agent_idx, (agent_predictions, agent_noise) in enumerate(zip(self.gmm_predictions, self.noise_chars)):
                 # Assuming mode_prob[agent_idx] gives us the most likely mode index for the agent
-                most_likely_mode = mode_prob[agent_idx]
+                most_likely_mode = self.mode_prob[agent_idx]
                 
                 # Ensure most_likely_mode is an integer, as expected
                 most_likely_mode = int(most_likely_mode)
@@ -131,8 +131,8 @@ class MM_MPC(MPC_Base):
                 filtered_predictions_vector.append(most_likely_mode_prediction)
                 filtered_noise_chars.append(most_likely_mode_noise)
         else:
-            filtered_predictions_vector = gmm_predictions_vector
-            filtered_noise_chars = noise_chars
+            filtered_predictions_vector = self.gmm_predictions
+            filtered_noise_chars = self.noise_chars
 
         ####
         # EV feedforward + TV state feedback policies from https://arxiv.org/abs/2109.09792
@@ -187,7 +187,7 @@ class MM_MPC(MPC_Base):
             for k in range(self.N):
                 mode_weight = 1
                 if not self.mle:
-                    mode_weight = mode_prob[j]
+                    mode_weight = self.mode_prob[j]
                 # if k > self.robust_horizon:
                 # robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]-opt_xs.T), Q, (opt_states[j][k, :]-opt_xs.T).T] 
                 #             )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) + 100000 * opt_epsilon_r[j][k]) #+ 100000 * opt_epsilon_o[k]
@@ -349,9 +349,9 @@ class MM_MPC(MPC_Base):
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
             
-            # for mode in range(self.num_modes):
-            #     self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
-            #     self.feedback_gains_cache[mode].append(sol.value(pol_gains[0][mode]).toarray())
+            for mode in range(self.num_modes):
+                self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
+                self.feedback_gains_cache[mode].append(sol.value(pol_gains[0][mode]).toarray())
 
             # obtain the control input
             u_res = [sol.value(opt_controls[j]) for j in range(self.num_modes)]
@@ -369,6 +369,10 @@ class MM_MPC(MPC_Base):
             self.prev_pol = pol_gains
             
             # self.prev_epsilon_o[agent_id] = eps_o 
+            self.rob_affine_model['A']=sol.value(A)
+            self.rob_affine_model['B']=sol.value(B)
+            self.rob_affine_model['C']=sol.value(C)
+            self.rob_affine_model['E']=sol.value(E) 
         
         except RuntimeError as e:
             print("Infeasible solve")
@@ -383,24 +387,37 @@ class MM_MPC(MPC_Base):
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
             print(self.num_timestep)
-    
+
+            uncontrolled_traj = [self.uncontrolled_fleet_data[obs_idx]['executed_traj'] for obs_idx in range(self.n_obs)]
+            self.current_uncontrolled_state = [uncontrolled_traj[obs_idx][self.num_timestep] for obs_idx in range(self.n_obs)]
+            self.gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(self.current_uncontrolled_state)
+            self.noise_chars = self.uncontrolled_fleet.get_gmm_predictions()
+            self.mode_prob = [prob for obs_idx in range(self.n_obs) for prob in self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep]]
+            
+            self.obs_affine_model ={obs_idx: {mode: {'T': None, 'c':None, 'E':None, 'covars':None} for mode in range(len(self.gmm_predictions[obs_idx]))} for obs_idx in range(self.n_obs)}
+            self.rob_affine_model ={'A': None, 'B':None, 'C':None, 'E':None}
+            for obs_idx, (agent_prediction, agent_noise) in enumerate(zip(self.gmm_predictions, self.noise_chars)):
+                for mode, prediction in agent_prediction.items():
+                    mean_traj = prediction['means']
+                    covariances = prediction['covariances']
+                    mean_inputs  = agent_noise[mode]['means']
+                    covar_inputs = agent_noise[mode]['covariances']
+                    
+                    obs_xy_cov = ca.diagcat(*[ covariances[i][:2,:2] for i in range(self.N)])
+                    T_o, c_o, E_o= self._get_obs_ATV_dynamics(mean_inputs, covar_inputs, mean_traj)
+                    
+                    self.obs_affine_model[obs_idx][mode].update({'T': T_o, 'c':c_o, 'E':E_o, 'covars':obs_xy_cov})
+
             # Create a multiprocessing pool
             pool = mp.Pool()
     
             # Apply MPC solve to each agent in parallel
             results = [self.run_single_mpc(0, np.array(self.current_state[0]), [])]
-            
-            # results = pool.starmap(self.run_single_mpc, [(agent_id, np.array(self.current_state[agent_id]), []) for agent_id in range(self.num_agent)])
-    
+                
             pool.close()
             pool.join()
 
-            current_state_obs_vector = [self.uncontrolled_fleet_data[obs]['executed_traj'][self.num_timestep] for obs in range(len(self.uncontrolled_fleet_data))]
-            gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs_vector)
-
-            mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep] 
-      
-            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions, mode_prob, ref=self.ref)
+            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], self.gmm_predictions, self.mode_prob, ref=self.ref)
             # self.plot_feedback_gains()
 
             # Process the results and update the current state

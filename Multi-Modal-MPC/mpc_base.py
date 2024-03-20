@@ -7,6 +7,7 @@ from metrics_logger import MetricsLogger
 from matplotlib.patches import Circle, Arrow
 from matplotlib.animation import FuncAnimation
 import seaborn as sns
+from scipy.stats import multivariate_normal
 
 class MPC_Base:
     def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=None, ref=None, feedback=None, robust_horizon=None, mle=False):
@@ -84,6 +85,9 @@ class MPC_Base:
         self.success = False
 
         self.logger = MetricsLogger()
+
+        self.rob_affine_model = {}
+        self.obs_affine_model = {}
     
     def shift_movement(self, x0, u, f):
         f_value = f(x0, u[0])
@@ -254,6 +258,8 @@ class MPC_Base:
             for pred in current_prediction:
                 self.ax.plot(pred[:, 0], pred[:, 1])
         else:
+            print("Calling feedback policy")
+            self.get_robot_feedback_policy() 
             self.ax.plot(current_prediction[0, :], current_prediction[1, :])
 
         # Plotting current state with a circle and arrow
@@ -302,6 +308,69 @@ class MPC_Base:
         self.fig.tight_layout()  # Adjust the layout
         plt.draw()
         plt.pause(0.01)  # Pause for a brief moment
+
+    def get_robot_feedback_policy(self):
+        N_samples = 2
+        N_t = multivariate_normal.rvs(np.zeros(self.N), np.eye(self.N), N_samples)
+        current_state_obs = self.current_uncontrolled_state[0]
+
+        # Initialize the data structure
+        trajectories = {}
+
+        for mode in range(self.num_modes):
+            # Initialize the lists to store samples for current mode
+            obs_samples = []
+            rob_samples = []
+
+            obs_mean = (self.obs_affine_model[0][mode]['T'] @ current_state_obs[:2]).reshape((-1, 1)) + self.obs_affine_model[0][mode]['c']
+            rob_mean = ca.vec(self.prev_states[0][mode].T)
+
+            for sample in range(N_samples):
+                obs_dist = obs_mean + self.obs_affine_model[0][mode]['E'] @ N_t[sample, :].reshape((-1, 1))
+                rob_dist = rob_mean + self.rob_affine_model['B'].toarray() @ self.feedback_gains[mode] @ (obs_dist[:-2] - obs_mean[:-2])
+
+                # Store the samples
+                obs_samples.append(obs_dist)
+                rob_samples.append(rob_dist)
+
+            # Store the samples for this mode
+            trajectories[mode] = {'obs': obs_samples, 'rob': rob_samples}
+
+        #         # Setup plot - create a single figure
+        plt.figure(figsize=(12, 9))
+
+        # Define some colors to differentiate between modes
+        colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
+
+        for mode in trajectories.keys():
+            # Extract obstacle and robot samples
+            obs_samples = trajectories[mode]['obs']
+            rob_samples = trajectories[mode]['rob']
+
+            # Select color for current mode
+            color = colors[mode % len(colors)]
+
+            # Plot the trajectories
+            # For each sample in the mode, extract the positions and plot them
+            for obs, rob in zip(obs_samples, rob_samples):
+                # Reshape the sample arrays to have pairs of (x, y) positions
+                obs_xy = np.ravel(obs).reshape(-1, 2)  # Reshape to (-1, 2) where -1 infers the correct length
+                rob_xy = np.ravel(rob).reshape(-1, 2)
+
+                # Plot obstacles trajectory for this sample
+                plt.scatter(obs_xy[:, 0], obs_xy[:, 1], color=color, alpha=0.5, label=f'Obstacles Mode {mode}' if obs is obs_samples[0] else "")
+
+                # Plot robot trajectory for this sample
+                plt.scatter(rob_xy[:, 0], rob_xy[:, 1], color=color, alpha=0.75, label=f'Robot Mode {mode}' if rob is rob_samples[0] else "")
+
+        # Add plot legend, labels, and title
+        plt.legend()
+        plt.title('Trajectories of Obstacles and Robot Across All Modes')
+        plt.xlabel('X Position')
+        plt.ylabel('Y Position')
+        plt.show()
+    
+        return trajectories
 
     def simulate(self):
         raise NotImplementedError("Subclasses must implement the functionality")

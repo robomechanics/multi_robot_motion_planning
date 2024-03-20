@@ -12,54 +12,104 @@ from itertools import product
 
 class MM_CBS(MPC_Base):
     
-    def _collision_check(self, agent_id, rob_sol, obs_id, obs_pred):
-        N_samples = 50
+    def _collision_check(self, agent_id, rob_sol, obs_id, obs_pred, obs_constraints):    
+        # This should ideally only consider modes that are in the thresholded mode cobination set
+        modes_set = set(range(self.num_modes))-set(obs_constraints[obs_id])
         
+        N_samples = 50
         N_t = multivariate_normal.rvs(np.zeros(self.N), np.eye(self.N), N_samples)
         
         collision_prob = 0.
         num_collisions = [0 for _ in range(self.num_modes)]
         min_distance = self.rob_dia*2+0.5
         
-        # uncontrolled_traj = self.uncontrolled_fleet_data[0]['executed_traj']
-        # current_state_obs = uncontrolled_traj[self.num_timestep]
-        # gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs)
-        # mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
+        eps = 0.01
         
+        obs_set = set(c for c in obs_constraints.keys())
+        n_obs = len(obs_set)
+                
         current_state_obs = obs_pred[obs_id]['current_state']
         mode_prob = obs_pred[obs_id]['mode_probs']
+        other_modes_prob = { k : obs_pred[k]['mode_probs'] for k in obs_set if k!=obs_id}
         
+        n_modes = {obs_idx: [] for obs_idx in obs_set}
+        
+        for obs_id, modes in obs_constraints.items():
+            n_modes[obs_id] = modes
         conflicts, resolved = [], []
+        
         time1= time.time()
     
-        for mode in range(self.num_modes):
+        for mode in modes_set:   # these are modes that are NOT in constraints_list for obs_id
             obs_mean = (self.obs_affine_model[obs_id][mode]['T']@current_state_obs[:2]).reshape((-1,1)) + self.obs_affine_model[obs_id][mode]['c']
-            # rob_mean = ca.vec(self.prev_states[agent_id][mode].T)
-            rob_mean = ca.vec(rob_sol["states"][mode].T)
-            feedback_gains = rob_sol['pol_gains'][mode]
-            for sample in range(N_samples):
-                obs_dist = obs_mean + self.obs_affine_model[obs_id][mode]['E']@N_t[sample,:].reshape((-1,1))
-      
-                rob_dist = rob_mean + self.rob_affine_model['B'].toarray()@feedback_gains@(obs_dist[:-2]-obs_mean[:-2])
+            rob_mean = ca.vec(self.prev_states[agent_id].T)
+                  
+            if obs_constraints[obs_id] == []:   # if this obstacle didn't have any constraints in the MPC
+                feedback_gains = ca.DM(self.N*2, self.N*2)
                 
-                rob_pos_dist = ca.vec(rob_dist.reshape((-1,self.N+1))[:2,:])
-
-                num_collisions[mode]+=np.linalg.norm(rob_pos_dist-obs_dist)<=min_distance*self.N
-                # print(np.linalg.norm(rob_pos_dist-obs_dist))
+                for sample in range(N_samples):
+                    obs_dist = obs_mean #+ self.obs_affine_model[obs_id][mode]['E']@N_t[sample,:].reshape((-1,1))
+        
+                    rob_dist = rob_mean #+ self.rob_affine_model['B'].toarray()@feedback_gains@(obs_dist[:-2]-obs_mean[:-2])
+                    
+                    rob_pos_dist = ca.vec(rob_dist.reshape((-1,self.N+1))[:2,:])
+                    num_collisions[mode]+=min(np.linalg.norm(rob_pos_dist.reshape((2,-1))-obs_dist.reshape((2,-1)), axis=0))<=min_distance
+                    
                 
-            num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode] #collision probability for mode
-            
-            if num_collisions[mode] > self.delta:
-                conflicts.append([agent_id, obs_id, mode])
+                num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode]
+                if num_collisions[mode] > self.delta:
+                    conflicts.append([agent_id, obs_id, mode])
+                else:
+                    resolved.append([agent_id, obs_id, mode])
             else:
-                resolved.append([agent_id, obs_id, mode])
+                for o_mode, feedback_gains in rob_sol['pol_gains'][obs_id].items():
+                    if feedback_gains is not None:
+                        # Do collision check below. IF it didnt pass, try with anoteher gain
+                        feedback_bias = rob_sol['pol_bias'][obs_id][o_mode]
+                        other_obs_modes = {o_idx: m for o_idx, m in n_modes.items() if o_idx!=obs_id}
+                        
+                        obs_mode_combinations = list(product(o_mode,*[other_obs_modes[obs] for obs in other_obs_modes.keys()]))
+                        # Sort combinations by probabiliity, and pick top qth percentile
+                        obs_list = [obs_id]+list(other_obs_modes.keys())
+                        
+                        num_collisions[mode] = 0
+                        for combination in obs_mode_combinations:
+                            # do collision check for all possible high prob mode combinations of other obstacles to define pol = h + h_obs+K_obs (o_obs) +  h_i + K_i o_i
+                    
+                            for sample in range(N_samples):
+                                obs_dist = obs_mean + self.obs_affine_model[obs_id][mode]['E']@N_t[sample,:].reshape((-1,1))
+                                
+                                # this is h_obs + K_obs@ (o_obs - E[o_obs])
+                                feedback_term = feedback_gains@(obs_dist[:-2]-obs_mean[:-2]) + feedback_bias
+                                
+                                # this loop computes the rest for the policy
+                                for i in range(1, len(combination)):
+                                    obs_mean = (self.obs_affine_model[i][combination[i]]['T']@current_state_obs[:2]).reshape((-1,1)) + self.obs_affine_model[i][combination[i]]['c']
+                                    obs_dist = obs_mean + self.obs_affine_model[i][combination[i]]['E']@N_t[sample,:].reshape((-1,1))
+                                    feedback_term += rob_sol['pol_bias'][i][combination[i]]    +    rob_sol['pol_gains'][i][combination[i]]@(obs_dist[:-2]-obs_mean[:-2])
+                                rob_dist = rob_mean + self.rob_affine_model['B'].toarray()@feedback_term
+                                
+                                rob_pos_dist = ca.vec(rob_dist.reshape((-1,self.N+1))[:2,:])
+
+                                num_collisions[mode]+=min(np.linalg.norm(rob_pos_dist.reshape((2,-1))-obs_dist.reshape((2,-1)), axis=0))<=min_distance
+                            
+                        num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode]
+                        if num_collisions[mode] <= self.delta:
+                            rob_sol['pol_gains'][obs_id][mode] = feedback_gains
+                            rob_sol['pol_bias'][obs_id][mode] = feedback_bias
+                            resolved.append([agent_id, obs_id, mode])
+                            break
                 
+                if mode not in rob_sol['pol_gains'].keys():
+                    conflicts.append([agent_id, obs_id, mode])
+            
+            #collision probability for mode
             collision_prob+=num_collisions[mode]
             
         time2=time.time()-time1
         
         return conflicts, resolved, collision_prob  
-    
+     
     def _get_robot_ATV_dynamics(self, current_state, x_lin=None, u_lin=None):
         """
         Constructs system matrices such for the robot,
@@ -446,12 +496,6 @@ class MM_CBS(MPC_Base):
                     T_o, c_o, E_o= self._get_obs_ATV_dynamics(mean_inputs, covar_inputs, mean_traj)
                     
                     self.obs_affine_model[obs_idx][mode].update({'T': T_o, 'c':c_o, 'E':E_o, 'covars':obs_xy_cov})
-                
-            
-            # self.rob_affine_model[mode]['A']=sol.value(A_rob[mode])
-            # self.rob_affine_model[mode]['B']=sol.value(B_rob[mode])
-            # self.rob_affine_model[mode]['C']=sol.value(C_rob[mode])
-            # self.rob_affine_model[mode]['E']=sol.value(E_rob[mode])   
     
             # Apply MPC solve to each agent in parallel
             self.reference_x, self.reference_u = None, None

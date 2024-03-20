@@ -47,7 +47,7 @@ if __name__ == "__main__":
     # algs = ["MM-MPC", "MLE-MPC", "Branch-MPC", "Robust-MPC"]
     algs = ["MM-MPC"]
     branch_times = [2, 6, 12]
-    noise_levels = [0.2]
+    noise_levels = [0.1]
 
     # results, errors = summarize_algorithm_comparison_results("mm_results_arch")
     # plot_algorithm_comparison_results(results, errors)

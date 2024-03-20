@@ -753,10 +753,4 @@ def plot_key_timesteps(folder_name, trial_number, key_timesteps):
         ax.axvline(x=-1, color='k', linestyle='--', linewidth=2)
         ax.axvline(x=1, color='k', linestyle='--', linewidth=2)
 
-
-    # # Adding legend only once
-    # handles, labels = ax.get_legend_handles_labels()
-    # if handles:
-    #     ax.legend(handles=handles[:2], labels=labels[:2])
-
     plt.show()
