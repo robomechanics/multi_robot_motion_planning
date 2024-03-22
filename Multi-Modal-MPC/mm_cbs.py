@@ -25,7 +25,7 @@ class MM_CBS(MPC_Base):
         
         collision_prob = 0.
         num_collisions = [0 for _ in range(self.num_modes)]
-        min_distance = self.rob_dia*2+0.5
+        min_distance = self.rob_dia+0.1
         
         eps = 0.01
         
@@ -56,15 +56,16 @@ class MM_CBS(MPC_Base):
                 feedback_gains = ca.DM(self.N*2, self.N*2)
                 
                 for sample in range(N_samples):
-                    obs_dist = obs_mean #+ self.obs_affine_model[obs_id][mode]['E']@N_t[sample,:].reshape((-1,1))
+                    obs_dist = obs_mean + self.obs_affine_model[obs_id][mode]['E']@N_t[sample,:].reshape((-1,1))
         
-                    rob_dist = rob_mean #+ self.rob_affine_model['B'].toarray()@feedback_gains@(obs_dist[:-2]-obs_mean[:-2])
+                    rob_dist = rob_mean + self.rob_affine_model['B'].toarray()@feedback_gains@(obs_dist[:-2]-obs_mean[:-2])
                     
                     rob_pos_dist = ca.vec(rob_dist.reshape((-1,self.N+1))[:2,:])
                     num_collisions[mode]+=min(np.linalg.norm(rob_pos_dist.reshape((2,-1))-obs_dist.reshape((2,-1)), axis=0))<=min_distance
                     
                 
                 num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode]
+                
                 if num_collisions[mode] > self.delta:
                     conflicts.append([agent_id, obs_id, mode])
                 else:
@@ -252,17 +253,17 @@ class MM_CBS(MPC_Base):
         u_ff = opti.variable(self.N, 2)
         
        
-        opt_controls_h = {obs_idx: [ca.vertcat(ca.DM(self.robust_horizon,2), 
+        opt_controls_h = {obs_idx: {j :ca.vertcat(ca.DM(self.robust_horizon,2), 
                                     opti.variable(self.N-self.robust_horizon,2)) if (obs_idx, j) not in n_modes_old else self.feedback_bias[obs_idx][j]\
-                                    for j in n_modes[obs_idx]] for obs_idx in obs_set}
+                                    for j in n_modes[obs_idx] } for obs_idx in obs_set}
         
         # opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(len(constraints))]
         # opt_epsilon_r = {obs_idx: [opti.variable(self.N,1) for _ in range(n_modes[obs_idx])] for obs_idx in obs_set}
         
         # other_obs_modes = {o_idx: m for o_idx, m in n_modes.items() if o_idx!=obs_idx}
                     
-        # obs_mode_combinations = list(product([n_modes[obs_idx] for obs_idx in n_modes.keys()]))
-        obs_mode_combinations = self.obs_mode_combinations
+        obs_mode_combinations = list(product(*[n_modes[obs_idx] for obs_idx in n_modes.keys()]))
+        # obs_mode_combinations = self.obs_mode_combinations
         # this collects h term in policy for each MODE COMBO. Eg., if mode combo is (0,1,1), then h term := u_ff + h[obs_0][0]+h[obs_1][1]+ h_[obs_2][1]
   
         if not constraints:
@@ -270,7 +271,7 @@ class MM_CBS(MPC_Base):
             # mode_prob = {obs_idx: self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep] for obs_idx in obs_set
             mode_prob_combo = [ 1.]
         else:
-            
+            import pdb; pdb.set_trace()
             opt_controls   =     [   ca.vec(u_ff)+ca.vec(ca.sum2(ca.horzcat(*[ca.vec(opt_controls_h[obs_idx][combo[i]]) for i, obs_idx in enumerate(obs_set)]))) for n, combo in enumerate(obs_mode_combinations)]
             mode_prob = {obs_idx: self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep] for obs_idx in obs_set}
             
@@ -432,10 +433,12 @@ class MM_CBS(MPC_Base):
         try:     
             # solve the optimization problem
             t_ = time.time()
+            import pdb; pdb.set_trace()
             sol = opti.solve()
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
 
+            
             u_res = [ sol.value(control.reshape((-1,self.N)).T) for control in opt_controls]
             self.feedforward = sol.value(u_ff)
             
@@ -562,7 +565,7 @@ class MM_CBS(MPC_Base):
       
             # plt.plot(self._collision_check(0))
             # plt.show()
-            # print("Collision Probs:",self._collision_check(0))
+            
             # self.plot_feedback_gains()
 
             # Process the results and update the current state
@@ -591,7 +594,7 @@ class MM_CBS(MPC_Base):
                     self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], self.gmm_predictions, mode_prob, ref=self.ref)
             self.num_timestep += 1
             time_2 = time.time()
-            self.avg_comp_time.append(time_2-time_1)
+            # self.avg_comp_time.append(time_2-time_1)
             
             rob_sol ={'states': self.prev_states[0], 'controls': self.prev_controls[0], 'pol_gains': self.feedback_gains, "pol_bias": self.feedback_bias}
             
@@ -599,14 +602,14 @@ class MM_CBS(MPC_Base):
             
             obs_id = 0
             conflicts, resolved, collision_prob = self._collision_check(0,  rob_sol, obs_id, obs_pred, obs_constraints)
-            
-            while len(conflicts)==0 and obs_id < self.n_obs:
+           
+            while len(conflicts)==0 and obs_id+1 < self.n_obs:
                 obs_id+=1
                 conflicts, resolved, collision_prob = self._collision_check(0,  rob_sol, obs_id, obs_pred, obs_constraints)
             
             # if len(conflicts)> 0:
             #     obs_constraints[obs_id].append([c[-1] for c in conflicts if c[1]==obs_id])
-            
+            print(f"Collision Probs: {collision_prob}")
             MPC_constraints = obs_constraints
            
             node = MM_Node(0, rob_sol,
@@ -623,10 +626,10 @@ class MM_CBS(MPC_Base):
                 
                 if node.is_conflict_free():
                     print("Executed solution is GOOD!")
-                    self.max_comp_time = max(self.avg_comp_time)
-                    self.avg_comp_time = (sum(self.avg_comp_time) / len(self.avg_comp_time)) / self.num_agent
-                    # self.traj_length = get_traj_length(self.state_cache)
-                    self.makespan = self.num_timestep * self.dt
+                    # self.max_comp_time = max(self.avg_comp_time)
+                    # # self.avg_comp_time = (sum(self.avg_comp_time) / len(self.avg_comp_time)) / self.num_agent
+                    # # self.traj_length = get_traj_length(self.state_cache)
+                    # self.makespan = self.num_timestep * self.dt
                     self.success = True
                     
                     break
@@ -650,7 +653,9 @@ class MM_CBS(MPC_Base):
                 if obs_id in new_MPC_constraints and len(new_MPC_constraints[obs_id])>0:
                     new_MPC_constraints[obs_id]+=[(c[-1], "new") for c in conflicts if c[1]==obs_id]
                 else:
-                    new_MPC_constraints[obs_id]=[(c[-1], "new") for c in conflicts if c[1]==obs_id]            
+                    new_MPC_constraints[obs_id]=[(c[-1], "new") for c in conflicts if c[1]==obs_id]     
+                    
+                print(f"Adding node no. {len(tree)+1}")       
             
                 self.run_single_mpc(0, np.array(self.current_state[0]), new_MPC_constraints)
            
@@ -662,7 +667,7 @@ class MM_CBS(MPC_Base):
                 obs_id = 0
                 conflicts, resolved, collision_prob = self._collision_check(0,  rob_sol, obs_id, obs_pred, obs_constraints)
                 
-                while len(conflicts)==0 and obs_id < self.n_obs:
+                while len(conflicts)==0 and obs_id+1 < self.n_obs:
                     obs_id+=1
                     conflicts, resolved, collision_prob = self._collision_check(0,  rob_sol, obs_id, obs_pred, obs_constraints)
                 
@@ -683,12 +688,12 @@ class MM_CBS(MPC_Base):
             # else:
             #     self.success = False
         
-        run_description = self.scenario 
+        # run_description = self.scenario 
         
 
-        self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached, self.infeasible_count, self.num_timestep)
-        self.logger.print_metrics_summary()
-        self.logger.save_metrics_data()
+        # self.logger.log_metrics(run_description, self.trial, self.state_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached, self.infeasible_count, self.num_timestep)
+        # self.logger.print_metrics_summary()
+        # self.logger.save_metrics_data()
         
         # draw function
         # draw_result = Draw_MPC_point_stabilization_v1(

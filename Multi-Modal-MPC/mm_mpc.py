@@ -326,8 +326,8 @@ class MM_MPC(MPC_Base):
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
             
             for mode in range(self.num_modes):
-                self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
-                self.feedback_gains_cache[mode].append(sol.value(pol_gains[0][mode]).toarray())
+                self.feedback_gains[0][mode] = sol.value(pol_gains[0][mode]).toarray()
+                self.feedback_gains_cache[0][mode].append(sol.value(pol_gains[0][mode]).toarray())
 
             # obtain the control input
             u_res = [sol.value(opt_controls[j]) for j in range(self.num_modes)]
@@ -352,7 +352,7 @@ class MM_MPC(MPC_Base):
         return u_res, next_states_pred
     
     def simulate(self):
-        # self.setup_visualization()
+        self.setup_visualization()
         # self.setup_visualization_heatmap()
         
         # parallelized implementation
@@ -376,7 +376,7 @@ class MM_MPC(MPC_Base):
 
             mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep] 
       
-            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions, mode_prob, ref=self.ref)
+            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], gmm_predictions, mode_prob, ref=self.ref)
             # self.plot_feedback_gains()
 
             # Process the results and update the current state
