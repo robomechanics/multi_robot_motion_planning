@@ -59,11 +59,12 @@ if __name__ == "__main__":
     for noise_level in noise_levels:
         for bt in branch_times:
             for trial in range(num_trials):
-                x_unc = random.uniform(-0.1, 0.1) 
-                y_unc = random.uniform(1.5, 3.0)
+                x_unc = 0#random.uniform(-0.1, 0.1) 
+                y_unc = 1.5#random.uniform(1.5, 3.0)
 
-                initial_states = [[random.uniform(-0.2, 0.2), random.uniform(-0.2, 0.2), np.pi/2]]
-                final_states = [[random.uniform(-0.2, 0.2), random.uniform(4.5, 5.0), np.pi/2]]
+                # initial_states = [[random.uniform(-0.2, 0.2), random.uniform(-0.2, 0.2), np.pi/2]]
+                initial_states = [[0, 0, np.pi/2]]
+                final_states = [[0, 4.5, np.pi/2]]#[[random.uniform(-0.2, 0.2), random.uniform(4.5, 5.0), np.pi/2]]
                 
                 rx, ry, ryaw, rk, s = calc_spline_course([initial_states[0][0], final_states[0][0]], [initial_states[0][1], final_states[0][1]])
                 ref = [[x, y, yaw] for x, y, yaw in zip(rx, ry, ryaw)]
