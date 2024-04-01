@@ -207,7 +207,7 @@ class MM_MPC(MPC_Base):
                 #     opti.subject_to(rob_obs_constraints_ >= 0)
             
             # boundrary and control conditions
-            opti.subject_to(opti.bounded(-1.0, opt_x[j], 1.0))
+            opti.subject_to(opti.bounded(-0.5, opt_x[j], 0.5))
             opti.subject_to(opti.bounded(-5, opt_y[j], 5))
             opti.subject_to(opti.bounded(-self.v_lim, v[j], self.v_lim))
             opti.subject_to(opti.bounded(-self.omega_lim, omega[j], self.omega_lim))
@@ -245,7 +245,7 @@ class MM_MPC(MPC_Base):
 
                 obs_xy_cov = ca.diagcat(*[ covariances[i][:2,:2] for i in range(self.N)])
      
-                total_cost+= ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
+                total_cost+= 3*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
 
                 pol_gains_k.append(K_stack)
         
@@ -333,11 +333,11 @@ class MM_MPC(MPC_Base):
         opti.set_value(opt_xs, self.final_state[agent_id])
 
         # # set optimizing target withe init guess
-        # for j in range(self.num_modes):
-        #     if type(self.prev_controls[agent_id])!=type([]):
-        #         opti.set_initial(opt_controls[j], self.prev_controls[agent_id])  # (N, 2)
-        #     else:
-        #         opti.set_initial(opt_controls[j], self.prev_controls[agent_id][j])
+        for j in range(self.num_modes):
+            if type(self.prev_controls[agent_id])!=type([]):
+                opti.set_initial(opt_controls[j], self.prev_controls[agent_id])  # (N, 2)
+            else:
+                opti.set_initial(opt_controls[j], self.prev_controls[agent_id][j])
 
         u_res = None
         next_states_pred = None
@@ -381,7 +381,7 @@ class MM_MPC(MPC_Base):
     
     def simulate(self):
         self.setup_visualization()
-        # self.setup_visualization_heatmap()
+        self.setup_visualization_heatmap()
         
         # parallelized implementation
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
@@ -418,7 +418,7 @@ class MM_MPC(MPC_Base):
             pool.join()
 
             self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], self.gmm_predictions, self.mode_prob, ref=self.ref)
-            # self.plot_feedback_gains()
+            self.plot_feedback_gains()
 
             # Process the results and update the current state
             for agent_id, result in enumerate(results):

@@ -6,13 +6,14 @@ from utils import *
 import matplotlib.pyplot as plt
 from uncontrolled_agent import UncontrolledAgent
 from path_planner import calc_spline_course
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 
 if __name__ == "__main__":
     # initial_states = [[0.0, 0.0, -np.pi/2]]
     # final_states = [[0.0, 3.0, np.pi/2]]
 
     cost_func_params = {
-        'Q': np.array([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 2.0]]),
+        'Q': np.array([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 3.0]]),
         'R': np.array([[2.0, 0.0], [0.0, 0.5]]),
         'P': np.array([[15.0, 0.0], [0.0, 15.0]]),
         'Qc': 8,
@@ -62,10 +63,10 @@ if __name__ == "__main__":
         for bt in branch_times:
             for trial in range(num_trials):
                 initial_states = [[random.uniform(-0.1, 0.1), random.uniform(-0.1, 0.1), np.pi/2]]
-                final_states = [[random.uniform(-0.1, 0.1), random.uniform(4.5, 5.0), np.pi/2]]
+                final_states = [[random.uniform(-0.1, 0.1), random.uniform(3.5, 4.0), np.pi/2]]
                 
-                x_unc = random.uniform(-0.1, 0.1) 
-                y_unc = random.uniform(2.5, 3.0) 
+                x_unc = 0#random.uniform(-0.1, 0.1) 
+                y_unc = 3.0#random.uniform(1.5, 2.5) 
                 
                 uncontrolled_fleet = UncontrolledAgent(init_state=[(x_unc, y_unc, 0.0)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=noise_level)
                 uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
@@ -78,7 +79,7 @@ if __name__ == "__main__":
                     for alg in algs:
                         scenario = alg + "_" + "n_" + str(noise_level) + "_b_" + str(bt)
                         if alg == "MM-MPC":
-                            mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=True, robust_horizon=bt, ref=ref)
+                            mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=True, robust_horizon=2, ref=ref)
                             mpc.simulate()
                         elif alg == "Branch-MPC":
                             mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=False, robust_horizon=2, ref=ref)

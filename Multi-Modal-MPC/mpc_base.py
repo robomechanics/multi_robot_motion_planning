@@ -8,6 +8,9 @@ from matplotlib.patches import Circle, Arrow
 from matplotlib.animation import FuncAnimation
 import seaborn as sns
 from scipy.stats import multivariate_normal
+from matplotlib.colors import TwoSlopeNorm, ListedColormap
+from matplotlib.colors import Normalize
+from matplotlib.patches import Rectangle
 
 class MPC_Base:
     def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=None, ref=None, feedback=None, robust_horizon=None, mle=False):
@@ -56,6 +59,9 @@ class MPC_Base:
             self.current_state[i] = self.initial_state[i]
 
         self.n_obs=len(self.uncontrolled_fleet_data)
+        self.main_frame_counter = 0
+        self.fb_frame_counter = 0
+        self.frame_limit = 20
 
         self.obs = obs
         self.dyn_obs = obs["dynamic"]
@@ -212,15 +218,15 @@ class MPC_Base:
         return segment_dict
 
     def setup_visualization(self):
-        self.fig = plt.figure(figsize=(12, 6))  # Adjust the figure size as needed
+        self.fig1 = plt.figure(figsize=(12, 6))  # Adjust the figure size as needed
 
         # Main plot for GMM Means and Agent State Visualization
-        self.ax = plt.subplot2grid((1, 2), (0, 0), rowspan=1, colspan=1)
-        self.ax.set_title('GMM Means and Agent State Visualization')
-        self.ax.set_xlabel('X coordinate')
-        self.ax.set_ylabel('Y coordinate')
-        self.ax.set_xlim(-10, 10)
-        self.ax.set_ylim(-10, 10)
+        self.ax1 = plt.subplot2grid((1, 2), (0, 0), rowspan=1, colspan=1)
+        self.ax1.set_title('GMM Means and Agent State Visualization')
+        self.ax1.set_xlabel('X coordinate')
+        self.ax1.set_ylabel('Y coordinate')
+        self.ax1.set_xlim(-10, 10)
+        self.ax1.set_ylim(-10, 10)
 
         # Subplot for Mode Probabilities
         self.ax_prob = plt.subplot2grid((1, 2), (0, 1), rowspan=1, colspan=1)
@@ -231,14 +237,14 @@ class MPC_Base:
         plt.ion()  # Turn on interactive mode
 
     def plot_gmm_means_and_state(self, current_state, current_prediction, gmm_data=None, mode_prob=None, ref=None):
-        self.ax.clear()  # Clear the main axes
+        self.ax1.clear()  # Clear the main axes
         self.ax_prob.clear()  # Clear the mode probability axes
-        self.ax.axvline(x=-1, color='k', linestyle='--')
-        self.ax.axvline(x=1, color='k', linestyle='--')
+        self.ax1.axvline(x=-0.5, color='k', linestyle='--')
+        self.ax1.axvline(x=0.5, color='k', linestyle='--')
 
         # Set the title and labels for the main plot
-        self.ax.set_xlim(-4, 4)
-        self.ax.set_ylim(-4, 4)
+        self.ax1.set_xlim(-4, 4)
+        self.ax1.set_ylim(-4, 4)
 
         # Plotting the GMM predictions as scattered points
         colors = plt.cm.get_cmap('hsv', self.n_obs*self.num_modes+1)
@@ -251,66 +257,143 @@ class MPC_Base:
                     # Here, we're taking the average of the variances for simplicity
                     radius = np.sqrt((cov_matrix[0, 0] + cov_matrix[1, 1]) / 2)
                     circle = plt.Circle((mean[0], mean[1]), radius, color=colors(mode), alpha=0.2)
-                    self.ax.add_patch(circle)
+                    # self.ax.add_patch(circle)
 
         # Plotting predictions
         if(isinstance(current_prediction, list)):
-            for pred in current_prediction:
-                self.ax.plot(pred[:, 0], pred[:, 1])
+            trajectories = self.get_robot_feedback_policy()
+            
+            colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
+            for mode in trajectories.keys():
+                # Extract obstacle and robot samples
+                obs_samples = trajectories[mode]['obs']
+                rob_samples = trajectories[mode]['rob']
+
+                # Select color for current mode
+                # color = colors[mode % len(colors)]
+
+                # Plot the trajectories
+                # For each sample in the mode, extract the positions and plot them
+                for obs, rob in zip(obs_samples, rob_samples):
+                    # Reshape the sample arrays to have pairs of (x, y) positions
+                    obs_xy = np.ravel(obs).reshape(-1, 2)  # Reshape to (-1, 2) where -1 infers the correct length
+                    rob_xy = np.ravel(rob).reshape(-1, 2)
+
+                    # Plot obstacles trajectory for this sample
+                    self.ax1.scatter(obs_xy[:, 0], obs_xy[:, 1], color=colors[mode], alpha=1, linewidth=2, label=f'Obstacles Mode {mode}' if obs is obs_samples[0] else "")
+
+                    # Plot robot trajectory for this sample
+                    self.ax1.plot(rob_xy[:, 0], rob_xy[:, 1], color=colors[mode], alpha=0.2, linewidth=1, label=f'Robot Mode {mode}' if rob is rob_samples[0] else "") 
         else:
-            print("Calling feedback policy")
-            self.get_robot_feedback_policy() 
-            self.ax.plot(current_prediction[0, :], current_prediction[1, :])
+            self.ax1.plot(current_prediction[0, :], current_prediction[1, :])
 
         # Plotting current state with a circle and arrow
         circle = plt.Circle((current_state[0], current_state[1]), 0.15, fill=True, color='blue')
-        self.ax.add_patch(circle)
+        self.ax1.add_patch(circle)
         arrow_length = 0.3
         arrow = plt.Arrow(current_state[0], current_state[1],
                           arrow_length * np.cos(current_state[2]), arrow_length * np.sin(current_state[2]),
                           width=0.1, color='yellow')
-        self.ax.add_patch(arrow)
+        self.ax1.add_patch(arrow)
 
         # Plotting the mode probabilities as a bar chart
-        if mode_prob is not None:
-            modes = range(len(mode_prob))
-            mode_labels = [f"Mode {i+1}" for i in modes]  # Create labels for each mode
-            bar_colors = [colors(i) for i in modes]  # Use the same color scheme as for the circles
-            bars = self.ax_prob.bar(modes, mode_prob, color=bar_colors, alpha=0.6)
-            self.ax_prob.set_ylim(0, 1)
-            self.ax_prob.set_ylabel('Mode Probabilities')
-            self.ax_prob.set_xticks(modes)  # Set the x-ticks to be at the modes
-            self.ax_prob.set_xticklabels(mode_labels)  # Label the x-ticks
+        # if mode_prob is not None:
+        #     modes = range(len(mode_prob))
+        #     mode_labels = [f"Mode {i+1}" for i in modes]  # Create labels for each mode
+        #     bar_colors = [colors(i) for i in modes]  # Use the same color scheme as for the circles
+        #     bars = self.ax_prob.bar(modes, mode_prob, color=bar_colors, alpha=0.6)
+        #     self.ax_prob.set_ylim(0, 1)
+        #     self.ax_prob.set_ylabel('Mode Probabilities')
+        #     self.ax_prob.set_xticks(modes)  # Set the x-ticks to be at the modes
+        #     self.ax_prob.set_xticklabels(mode_labels)  # Label the x-ticks
 
         plt.draw()
-        plt.pause(0.05)
-    
+
+        if self.main_frame_counter < self.frame_limit:
+            frame_filename = f'frame_{self.main_frame_counter}.png'  # Define the file name
+            self.fig1.savefig(frame_filename)  # Save the figure
+            self.main_frame_counter += 1  # Increment the frame counter
+        plt.pause(0.1)
+
     def setup_visualization_heatmap(self):
         num_plots = len(self.feedback_gains)
 
+        # Calculate figure width dynamically based on the number of plots
+        # Assuming each plot requires a width of 4 units and height remains 6 units
+        # Adding some extra space for padding between plots
+        fig_width = 4 * num_plots if num_plots > 1 else 6  # Adjust the multiplier as needed
+        fig_height = 6
+
         # Create a figure with subplots
-        self.fig, self.axes = plt.subplots(1, num_plots, figsize=(6 * num_plots, 6))
+        self.fig, self.axes = plt.subplots(1, num_plots, figsize=(fig_width, fig_height))
+
+        # If there's more than one plot, adjust subplots to provide enough space between them
+        if num_plots > 1:
+            plt.subplots_adjust(wspace=0.3)  # Adjust the space between plots as needed
+
         plt.ion()  # Turn on interactive mode
 
     def plot_feedback_gains(self):
+        # Define colors for modes, and use white for zero values
+        color_map = {0: '#ff3333', 1: '#33ff33'}
+        zero_color = 'white'  # Color for zero value
+
         for i, (mode, gain_matrix) in enumerate(self.feedback_gains.items()):
             ax = self.axes[i]
-
-            # Remove existing colorbar, if any
-            for cbar in ax.collections:
-                if hasattr(cbar, 'colorbar') and cbar.colorbar:
-                    cbar.colorbar.remove()
-
             ax.clear()  # Clear the axes for the new heatmap
-            heatmap = sns.heatmap(np.abs(gain_matrix), ax=ax, vmin=0, vmax=10)
-            ax.set_title("Feedback Gain for Mode " + str(mode))  # Set title for the heatmap
 
-        self.fig.tight_layout()  # Adjust the layout
+            diagonal_elements = []
+
+            N = gain_matrix.shape[0] // 2
+            for j in range(N):
+                block = gain_matrix[2*j:2*j+2, 2*j:2*j+2]
+                diagonal_elements.extend([block[0, 0], block[1, 1]])
+
+            diagonal_matrix = np.array(diagonal_elements).reshape(-1, 2)
+
+            # Use the maximum absolute value for scaling, ensuring non-zero.
+            max_val = np.max(np.abs(diagonal_matrix))
+            if max_val == 0:
+                max_val = 1  # Avoid division by zero.
+
+            # Iterate through each cell in the diagonal_matrix to set colors and alpha.
+            for y in range(diagonal_matrix.shape[0]):
+                for x in range(diagonal_matrix.shape[1]):
+                    value = diagonal_matrix[y, x]
+                    # Treat values with |value| < 1e-3 as zero.
+                    if abs(value) < 1e-3:
+                        color = zero_color
+                        alpha = 0  # Treat as fully transparent or white.
+                    else:
+                        color = color_map[mode]
+                        # Scale alpha based on the absolute value relative to the max value.
+                        alpha = abs(value) / max_val
+
+                    rect = Rectangle((x, y), 1, 1, color=color, alpha=alpha)
+                    ax.add_patch(rect)
+
+            # Configure the axis settings for heatmap display.
+            ax.set_xlim(0, diagonal_matrix.shape[1])
+            ax.set_ylim(0, diagonal_matrix.shape[0])
+            ax.set_aspect('equal')
+
+            # Label axes.
+            ax.set_xticks([0.5, 1.5])
+            ax.set_xticklabels(['x', 'y'])
+            ax.set_yticks(np.arange(diagonal_matrix.shape[0]) + 0.5)
+            ax.set_yticklabels(np.arange(1, diagonal_matrix.shape[0] + 1))
+
+        self.fig.tight_layout()
         plt.draw()
-        plt.pause(0.01)  # Pause for a brief moment
+
+        if self.fb_frame_counter < self.frame_limit:
+            frame_filename = f'frame_feedback_{self.fb_frame_counter}.png'  # Define the file name
+            self.fig.savefig(frame_filename)  # Save the figure
+            self.fb_frame_counter += 1  # Increment the frame counter
+        plt.pause(0.01)
 
     def get_robot_feedback_policy(self):
-        N_samples = 2
+        N_samples = 20
         N_t = multivariate_normal.rvs(np.zeros(self.N), np.eye(self.N), N_samples)
         current_state_obs = self.current_uncontrolled_state[0]
 
@@ -329,46 +412,48 @@ class MPC_Base:
                 obs_dist = obs_mean + self.obs_affine_model[0][mode]['E'] @ N_t[sample, :].reshape((-1, 1))
                 rob_dist = rob_mean + self.rob_affine_model['B'].toarray() @ self.feedback_gains[mode] @ (obs_dist[:-2] - obs_mean[:-2])
 
+                rob_dist = rob_dist.reshape((3,13))
+                rob_dist_xy = rob_dist[:2, :].reshape(((self.N+1)*2, 1))
+
                 # Store the samples
                 obs_samples.append(obs_dist)
-                rob_samples.append(rob_dist)
+                rob_samples.append(rob_dist_xy)
 
             # Store the samples for this mode
             trajectories[mode] = {'obs': obs_samples, 'rob': rob_samples}
 
-        #         # Setup plot - create a single figure
-        plt.figure(figsize=(12, 9))
+        # plt.figure(figsize=(12, 9))
 
-        # Define some colors to differentiate between modes
-        colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
+        # # Define some colors to differentiate between modes
+        # colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
 
-        for mode in trajectories.keys():
-            # Extract obstacle and robot samples
-            obs_samples = trajectories[mode]['obs']
-            rob_samples = trajectories[mode]['rob']
+        # for mode in trajectories.keys():
+        #     # Extract obstacle and robot samples
+        #     obs_samples = trajectories[mode]['obs']
+        #     rob_samples = trajectories[mode]['rob']
 
-            # Select color for current mode
-            color = colors[mode % len(colors)]
+        #     # Select color for current mode
+        #     color = colors[mode % len(colors)]
 
-            # Plot the trajectories
-            # For each sample in the mode, extract the positions and plot them
-            for obs, rob in zip(obs_samples, rob_samples):
-                # Reshape the sample arrays to have pairs of (x, y) positions
-                obs_xy = np.ravel(obs).reshape(-1, 2)  # Reshape to (-1, 2) where -1 infers the correct length
-                rob_xy = np.ravel(rob).reshape(-1, 2)
+        #     # Plot the trajectories
+        #     # For each sample in the mode, extract the positions and plot them
+        #     for obs, rob in zip(obs_samples, rob_samples):
+        #         # Reshape the sample arrays to have pairs of (x, y) positions
+        #         obs_xy = np.ravel(obs).reshape(-1, 2)  # Reshape to (-1, 2) where -1 infers the correct length
+        #         rob_xy = np.ravel(rob).reshape(-1, 2)
 
-                # Plot obstacles trajectory for this sample
-                plt.scatter(obs_xy[:, 0], obs_xy[:, 1], color=color, alpha=0.5, label=f'Obstacles Mode {mode}' if obs is obs_samples[0] else "")
+        #         # Plot obstacles trajectory for this sample
+        #         plt.plot(obs_xy[:, 0], obs_xy[:, 1], color=color, alpha=0.5, label=f'Obstacles Mode {mode}' if obs is obs_samples[0] else "")
 
-                # Plot robot trajectory for this sample
-                plt.scatter(rob_xy[:, 0], rob_xy[:, 1], color=color, alpha=0.75, label=f'Robot Mode {mode}' if rob is rob_samples[0] else "")
+        #         # Plot robot trajectory for this sample
+        #         plt.scatter(rob_xy[:, 0], rob_xy[:, 1], color=color, alpha=0.75, label=f'Robot Mode {mode}' if rob is rob_samples[0] else "")
 
-        # Add plot legend, labels, and title
-        plt.legend()
-        plt.title('Trajectories of Obstacles and Robot Across All Modes')
-        plt.xlabel('X Position')
-        plt.ylabel('Y Position')
-        plt.show()
+        # # Add plot legend, labels, and title
+        # plt.legend()
+        # plt.title('Trajectories of Obstacles and Robot Across All Modes')
+        # plt.xlabel('X Position')
+        # plt.ylabel('Y Position')
+        # plt.show()
     
         return trajectories
 

@@ -18,8 +18,8 @@ class UncontrolledAgent:
         self.omega_variance = 0.01 if action_variance is None else action_variance**2   # Variances for omega corresponding to each action
         self.v_variance = 0.01 if action_variance is None else action_variance**2
         self.actions = [
-        (np.random.normal(self.v_mean, action_variance), np.random.normal(0.0, 0.01)), 
-        (np.random.normal(-self.v_mean, action_variance), np.random.normal(0.0, 0.01))]
+        (np.random.normal(-self.v_mean, action_variance), np.random.normal(0.0, 0.01)), 
+        (np.random.normal(self.v_mean, action_variance), np.random.normal(0.0, 0.01))]
         self.action_prob = [0.5, 0.5]
         self.noise_range = [-0.02, 0.02]
         self.prior_likelihood = [0.5, 0.5]
