@@ -109,7 +109,7 @@ class MM_CBS(MPC_Base):
                             rob_sol['pol_bias'][obs_id][mode] = feedback_bias
                             resolved.append([agent_id, obs_id, mode])
                             break
-                
+
                 if mode not in rob_sol['pol_gains'].keys():
                     conflicts.append([agent_id, obs_id, mode])
                     
@@ -492,7 +492,7 @@ class MM_CBS(MPC_Base):
                                                             *[B[t*3:(t+1)*3-1,:]@pol_gains[l][combination[i]]@self.obs_affine_model[l][combination[i]]['E'][:-2,:]\
                                                              -int(l==obs_idx)*self.obs_affine_model[obs_idx][j]['E'][t*2:(t+1)*2,:] for i,l in enumerate(obs_list)])
 
-                        robot_ff_control = ca.vec(u_ff.T)+ca.sum2(ca.horzcat(*[opt_controls[l][combination[i]]-ca.vec(u_ff.T) for i,l in enumerate(obs_list)]))
+                        robot_ff_control = ca.vec(u_ff.T)+ca.sum2(ca.horzcat(*[ca.vec(opt_controls_h[l][combination[i]].T) for i,l in enumerate(obs_list)]))
                         nom_robot_state = ca.vec(A@ca.DM(current_state)+B@robot_ff_control+C).reshape((-1,self.N+1)).T
                         nom_dist = (rob_proj-obs_pos).T@(nom_robot_state[t,:2].T-rob_proj)
 
@@ -559,7 +559,7 @@ class MM_CBS(MPC_Base):
                 next_states_pred[0].append(self.model.fCd(next_states_pred[0][-1],self.feedforward[t,:]).T)
             next_states_pred[0] = ca.vertcat(*next_states_pred[0])
             # eps_o = sol.value(opt_epsilon_o)
-            import pdb; pdb.set_trace()
+         
             
             self.prev_states[agent_id] = next_states_pred[0]
             
@@ -586,7 +586,8 @@ class MM_CBS(MPC_Base):
         # parallelized implementation
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
-            print(self.num_timestep)
+            print(f"Time: {self.num_timestep}")
+            print("Starting root solve")
     
             # Create a multiprocessing pool
             pool = mp.Pool()
@@ -639,7 +640,7 @@ class MM_CBS(MPC_Base):
             # MPC_constraints = { obs: [(mode, "new") for mode in range(self.num_modes)]   for obs in range(self.n_obs)}
             MPC_constraints = {}#{ obs: []   for obs in range(self.n_obs)}
             
-            results = [self.run_single_mpc(0, np.array(self.current_state[0]), MPC_constraints)]
+            result = self.run_single_mpc(0, np.array(self.current_state[0]), MPC_constraints)
                   
             
             
@@ -670,30 +671,7 @@ class MM_CBS(MPC_Base):
             # self.plot_feedback_gains()
 
             # Process the results and update the current state
-            for agent_id, result in enumerate(results):
-                u, next_states_pred = result
-                if u is None:
-                    self.infeasible_count += 1
-                    self.infeasible = True
-                    u = [np.zeros((self.N, 2))]
-                    current_state = np.array(self.current_state[agent_id])
-                    next_state = self.shift_movement(current_state, u[0], self.f_np)
-
-                    self.prediction_cache[agent_id] = next_states_pred
-                    self.control_cache[agent_id] = u
-                    self.current_state[agent_id] = next_state
-                    self.state_cache[agent_id].append(next_state)
-                else:
-                    current_state = np.array(self.current_state[agent_id])
-                    next_state = self.shift_movement(current_state, u[0], self.f_np)
-
-                    self.prediction_cache[agent_id] = next_states_pred
-                    self.control_cache[agent_id] = u
-                    self.current_state[agent_id] = next_state
-                    self.state_cache[agent_id].append(next_state)
-                    # print("Agent state: ", next_state, " Agent control: ", u[0,:])
-                    self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], self.gmm_predictions, mode_prob, ref=self.ref)
-            self.num_timestep += 1
+           
             time_2 = time.time()
             # self.avg_comp_time.append(time_2-time_1)
             
@@ -720,7 +698,8 @@ class MM_CBS(MPC_Base):
           
             tree = [node]
             # tree[node.node_id]=node
-            
+            print("~~~~~~~~~~~~~~~~~~~~~~~~")
+            print("Incremental CBS starts")
             while True:
                 node = tree[-1]
                 
@@ -728,7 +707,7 @@ class MM_CBS(MPC_Base):
                 
                 if node.is_conflict_free():
                     u, next_states_pred = result
-                    current_state = np.array(self.current_state[agent_id])
+                    current_state = np.array(self.current_state[0])
                     print("Executed solution is GOOD!")
                     print(f"Control:   {rob_sol['controls'][0,:]}")
                     # self.max_comp_time = max(self.avg_comp_time)
@@ -736,7 +715,7 @@ class MM_CBS(MPC_Base):
                     # # self.traj_length = get_traj_length(self.state_cache)
                     # self.makespan = self.num_timestep * self.dt
                     self.success = True
-                    next_state = self.shift_movement(current_state, u[0], self.f_np)
+                    # next_state = self.shift_movement(current_state, u[0], self.f_np)
                     
                     break
 
@@ -782,7 +761,35 @@ class MM_CBS(MPC_Base):
                 
                 new_node = MM_Node(len(tree), rob_sol, conflicts, resolved, new_MPC_constraints)
                 tree.append(new_node)
+            print("~~~~~~~~~~~~~~~~~~~~~~~~")
             
+            
+            # for agent_id, result in enumerate(result):
+            u, next_states_pred = result
+            agent_id = 0
+            if u is None:
+                self.infeasible_count += 1
+                self.infeasible = True
+                u = [np.zeros((self.N, 2))]
+                current_state = np.array(self.current_state[agent_id])
+                next_state = self.shift_movement(current_state, u[0], self.f_np)
+
+                self.prediction_cache[agent_id] = next_states_pred
+                self.control_cache[agent_id] = u
+                self.current_state[agent_id] = next_state
+                self.state_cache[agent_id].append(next_state)
+            else:
+                current_state = np.array(self.current_state[agent_id])
+                u_next = [u[0][0,:]]
+                next_state = self.shift_movement(current_state, u_next, self.f_np)
+
+                self.prediction_cache[agent_id] = next_states_pred
+                self.control_cache[agent_id] = u
+                self.current_state[agent_id] = next_state
+                self.state_cache[agent_id].append(next_state)
+                # print("Agent state: ", next_state, " Agent control: ", u[0,:])
+                self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], self.gmm_predictions, mode_prob, ref=self.ref)
+            self.num_timestep += 1
             
             # if node.is_conflict_free():
             #     print("Executed solution is GOOD!")
