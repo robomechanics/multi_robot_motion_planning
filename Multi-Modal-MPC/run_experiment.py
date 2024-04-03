@@ -60,7 +60,7 @@ if __name__ == "__main__":
         for bt in branch_times:
             for trial in range(num_trials):
                 x_unc = 0#random.uniform(-0.1, 0.1) 
-                y_unc = 1.5#random.uniform(1.5, 3.0)
+                y_unc = 2.5#random.uniform(1.5, 3.0)
 
                 # initial_states = [[random.uniform(-0.2, 0.2), random.uniform(-0.2, 0.2), np.pi/2]]
                 initial_states = [[0, 0, np.pi/2]]
@@ -69,7 +69,7 @@ if __name__ == "__main__":
                 rx, ry, ryaw, rk, s = calc_spline_course([initial_states[0][0], final_states[0][0]], [initial_states[0][1], final_states[0][1]])
                 ref = [[x, y, yaw] for x, y, yaw in zip(rx, ry, ryaw)]
 
-                uncontrolled_fleet = UncontrolledAgent(init_state=[(x_unc, y_unc, 0.0)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=noise_level)
+                uncontrolled_fleet = UncontrolledAgent(init_state=[(x_unc, y_unc, -np.pi/2)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=noise_level)
                 uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
                 
                 for alg in algs:

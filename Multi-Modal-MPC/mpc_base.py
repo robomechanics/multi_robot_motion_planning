@@ -55,11 +55,13 @@ class MPC_Base:
 
         self.n_obs=len(self.uncontrolled_fleet_data)
 
-        self.feedback_gains = {obs_idx: {mode_id: np.zeros((2*self.N, 2*self.N)) for mode_id in range(self.num_modes)} for obs_idx in range(self.n_obs)}
+        self.feedback_gains = {obs_idx: {mode_id: None for mode_id in range(self.num_modes)} for obs_idx in range(self.n_obs)}
         self.feedback_gains_cache = {obs_idx: {mode_id: [] for mode_id in range(self.num_modes)} for obs_idx in range(self.n_obs)}
         
-        self.feedback_bias = {obs_idx:{mode_id: np.zeros((2*self.N, 2*self.N)) for mode_id in range(self.num_modes)}for obs_idx in range(self.n_obs)}
+        self.feedback_bias = {obs_idx:{mode_id: None for mode_id in range(self.num_modes)}for obs_idx in range(self.n_obs)}
         self.feedback_bias_cache = {obs_idx:{mode_id: [] for mode_id in range(self.num_modes)}for obs_idx in range(self.n_obs)}
+       
+        self.feedforward = None
         self.obs = obs
         self.dyn_obs = obs["dynamic"]
         self.static_obs = obs["static"]
@@ -89,6 +91,14 @@ class MPC_Base:
 
         self.logger = MetricsLogger()
     
+    def clear_feedback_cache(self):
+        self.feedback_gains = {obs_idx: {mode_id: None for mode_id in range(self.num_modes)} for obs_idx in range(self.n_obs)}
+        self.feedback_gains_cache = {obs_idx: {mode_id: [] for mode_id in range(self.num_modes)} for obs_idx in range(self.n_obs)}
+        
+        self.feedback_bias = {obs_idx:{mode_id: None for mode_id in range(self.num_modes)}for obs_idx in range(self.n_obs)}
+        self.feedback_bias_cache = {obs_idx:{mode_id: [] for mode_id in range(self.num_modes)}for obs_idx in range(self.n_obs)}
+        
+        self.feedforward = None
     def shift_movement(self, x0, u, f):
         f_value = f(x0, u[0])
         st = x0 + self.dt*f_value
@@ -109,7 +119,8 @@ class MPC_Base:
     def f(self, x_, u_): return ca.vertcat(
         *[u_[0]*ca.cos(x_[2]), u_[0]*ca.sin(x_[2]), u_[1]])
 
-    def f_np(self, x_, u_): return np.array(
+    def f_np(self, x_, u_): 
+        return np.array(
         [u_[0]*np.cos(x_[2]), u_[0]*np.sin(x_[2]), u_[1]])
     
     def find_collisions(self):
@@ -270,15 +281,15 @@ class MPC_Base:
         self.ax.add_patch(arrow)
 
         # Plotting the mode probabilities as a bar chart
-        if mode_prob is not None:
-            modes = range(len(mode_prob))
-            mode_labels = [f"Mode {i+1}" for i in modes]  # Create labels for each mode
-            bar_colors = [colors(i) for i in modes]  # Use the same color scheme as for the circles
-            bars = self.ax_prob.bar(modes, mode_prob, color=bar_colors, alpha=0.6)
-            self.ax_prob.set_ylim(0, 1)
-            self.ax_prob.set_ylabel('Mode Probabilities')
-            self.ax_prob.set_xticks(modes)  # Set the x-ticks to be at the modes
-            self.ax_prob.set_xticklabels(mode_labels)  # Label the x-ticks
+        # if mode_prob is not None:
+        #     modes = range(len(mode_prob))
+        #     mode_labels = [f"Mode {i+1}" for i in modes]  # Create labels for each mode
+        #     bar_colors = [colors(i) for i in modes]  # Use the same color scheme as for the circles
+        #     bars = self.ax_prob.bar(modes, mode_prob, color=bar_colors, alpha=0.6)
+        #     self.ax_prob.set_ylim(0, 1)
+        #     self.ax_prob.set_ylabel('Mode Probabilities')
+        #     self.ax_prob.set_xticks(modes)  # Set the x-ticks to be at the modes
+        #     self.ax_prob.set_xticklabels(mode_labels)  # Label the x-ticks
 
         plt.draw()
         plt.pause(0.05)

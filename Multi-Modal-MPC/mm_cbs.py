@@ -17,7 +17,8 @@ class MM_CBS(MPC_Base):
     def _collision_check(self, agent_id, rob_sol, obs_id, obs_pred, obs_constraints):
         
         # This should ideally only consider modes that are in the thresholded mode cobination set
-        modes_set = set(range(self.num_modes))-set([mode for mode, tag in obs_constraints[obs_id]])
+        # modes_set = set(range(self.num_modes))-set([mode for mode, tag in obs_constraints[obs_id]])
+        modes_set = self.n_modes_trunc[obs_id]-set([mode for mode, tag in obs_constraints[obs_id]])
         
         N_samples = 50
         
@@ -27,22 +28,17 @@ class MM_CBS(MPC_Base):
         num_collisions = [0 for _ in range(self.num_modes)]
         min_distance = self.rob_dia+0.1
         
-        eps = 0.01
-        
         obs_set = set(c for c in obs_constraints.keys())
-        n_obs = len(obs_set)
+      
                 
         current_state_obs = obs_pred[obs_id]['current_state']
         mode_prob = obs_pred[obs_id]['mode_probs']
-        other_modes_prob = { k : obs_pred[k]['mode_probs'] for k in obs_set if k!=obs_id}
         
-        
-       
-
         n_modes = {obs_idx: [] for obs_idx in obs_set}
         
         for obs_id, modes in obs_constraints.items():
             n_modes[obs_id] = [mode_tag[0] for mode_tag in modes]
+        
         conflicts, resolved = [], []
         time1= time.time()
     
@@ -113,12 +109,7 @@ class MM_CBS(MPC_Base):
                 if mode not in rob_sol['pol_gains'].keys():
                     conflicts.append([agent_id, obs_id, mode])
                     
-                
-
-            #collision probability for mode
-            
-            
-                
+            #collision probability for mode    
             collision_prob+=num_collisions[mode]
             
         time2=time.time()-time1
@@ -373,7 +364,7 @@ class MM_CBS(MPC_Base):
         # A_rob, B_rob, C_rob, E_rob = [], [], [], []
         opt_states, opt_x, opt_y, v, omega = [], [], [], [], []
         
-        # TODO: just linearize using reference (from root node solve)
+        
         A, B, C, E =  self.rob_affine_model['A'], self.rob_affine_model['B'], self.rob_affine_model['C'], self.rob_affine_model['E']
         for control in opt_controls:         
             
@@ -487,7 +478,7 @@ class MM_CBS(MPC_Base):
                     obs_list = [obs_idx]+list(other_obs_modes.keys())
                     for combination in obs_mode_combinations:
                         #combination = [j, one mode each of other obstacles in constraints list]
-                        _2_norm_coeff =2*sp.erfinv(1-0.1*self.delta)*(rob_proj-obs_pos).T
+                        _2_norm_coeff =2*sp.erfinv(1-self.delta)*(rob_proj-obs_pos).T
                         rv_dist  =_2_norm_coeff@ca.horzcat(E[t*3:(t+1)*3-1,:],                                                        
                                                             *[B[t*3:(t+1)*3-1,:]@pol_gains[l][combination[i]]@self.obs_affine_model[l][combination[i]]['E'][:-2,:]\
                                                              -int(l==obs_idx)*self.obs_affine_model[obs_idx][j]['E'][t*2:(t+1)*2,:] for i,l in enumerate(obs_list)])
@@ -516,6 +507,8 @@ class MM_CBS(MPC_Base):
         # opti.solver("OSQP")
         opti.set_value(opt_xs, self.final_state[agent_id])
 
+        if self.feedforward is not None:
+            opti.set_initial(u_ff, self.feedforward)
         # # set optimizing target withe init guess
         # for j in range(n_modes):
         #     if type(self.prev_controls[agent_id])!=type([]):
@@ -530,6 +523,7 @@ class MM_CBS(MPC_Base):
             # solve the optimization problem
 
             t_ = time.time()
+            
             sol = opti.solve()
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
@@ -608,6 +602,7 @@ class MM_CBS(MPC_Base):
             prob_sum = mode_prob_combinations[0][1]
             
             self.mode_conf_idx =[mode_prob_combinations[0][0]]
+            self.n_modes_trunc = {obs_id: set([self.obs_mode_combinations[self.mode_conf_idx[-1]][obs_id]]) for obs_id in range(self.n_obs)}
             for i in range(1,len(self.obs_mode_combinations)):
                 if prob_sum >= self.prob_thresh:
                     break
@@ -615,6 +610,8 @@ class MM_CBS(MPC_Base):
                     prob_sum +=mode_prob_combinations[i][1]
                     n_mode_confs += 1
                     self.mode_conf_idx.append(mode_prob_combinations[i][0])
+                    for obs_id in range(self.n_obs):
+                        self.n_modes_trunc[obs_id].add(self.obs_mode_combinations[self.mode_conf_idx[-1]][obs_id])
       
             self.obs_affine_model ={obs_idx: {mode: {'T': None, 'c':None, 'E':None, 'covars':None} for mode in range(len(self.gmm_predictions[obs_idx]))} for obs_idx in range(self.n_obs)}
             
