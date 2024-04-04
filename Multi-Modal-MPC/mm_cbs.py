@@ -740,7 +740,11 @@ class MM_CBS(MPC_Base):
                 print(f"Adding node no. {len(tree)+1} for constraints {new_MPC_constraints}")       
 
                 result = self.run_single_mpc(0, np.array(self.current_state[0]), new_MPC_constraints)
-           
+
+                if not result[0]:
+                    new_MPC_constraints = { obs: [(mode[0], "new") for mode in new_MPC_constraints[obs]]   for obs in new_MPC_constraints}
+                    result = self.run_single_mpc(0, np.array(self.current_state[0]), new_MPC_constraints)
+                    
                 rob_sol ={'states': self.prev_states[0], 'controls': self.prev_controls[0], 'pol_gains':self.feedback_gains, 'pol_bias':self.feedback_bias}
                 
                 obs_constraints = {obs_idx: [] for obs_idx in range(self.n_obs)}
