@@ -1,4 +1,4 @@
-from model.dynamics import Dynamic
+from ..dynamics import Dynamic
 
 
 class Linear(Dynamic):

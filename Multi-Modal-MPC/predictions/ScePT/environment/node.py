@@ -1,7 +1,7 @@
 import random
 import numpy as np
 import pandas as pd
-from environment import DoubleHeaderNumpyArray
+from . import DoubleHeaderNumpyArray
 from ncls import NCLS
 
 

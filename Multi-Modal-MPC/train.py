@@ -9,33 +9,34 @@ import json
 import random
 import pathlib
 from tqdm import tqdm
-import visualization
+# import visualization
 import matplotlib.pyplot as plt
 import matplotlib
-from argument_parser import args
-from model.ScePT import ScePT
-from model.model_registrar import ModelRegistrar
-from model.dataset import *
+from predictions.ScePT.argument_parser import args
+from predictions.ScePT.model.ScePT import ScePT
+from predictions.ScePT.model.model_registrar import ModelRegistrar
+from predictions.ScePT.model.dataset import *
 from torch.utils.tensorboard import SummaryWriter
 
 # torch.autograd.set_detect_anomaly(True)
 from torch.utils.data import Dataset, DataLoader
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-from utils.comm import all_gather
+from predictions.ScePT.utils.comm import all_gather
 from collections import defaultdict
 
 matplotlib.use("Agg")
 from functools import partial
 from pathos.multiprocessing import ProcessPool as Pool
 from torch.cuda.amp import autocast, GradScaler
-import model.dynamics as dynamic_module
+import predictions.ScePT.model.dynamics as dynamic_module
+from predictions.ScePT.environment import *
 
 thismodule = sys.modules[__name__]
 
-
 def train(rank, args):
     if torch.cuda.is_available():
+        print(rank)
         args.device = f"cuda:{rank}"
         torch.cuda.set_device(rank)
     else:
@@ -47,7 +48,6 @@ def train(rank, args):
         torch.manual_seed(args.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(args.seed)
-
     # Load hyperparameters from json
     if not os.path.exists(args.conf):
         print("Config json not found!")
@@ -104,6 +104,7 @@ def train(rank, args):
             args.log_dir,
             args.log_tag + time.strftime("%d_%b_%Y_%H_%M_%S", time.localtime()),
         )
+        print(model_dir)
 
         if rank == 0:
             pathlib.Path(model_dir).mkdir(parents=True, exist_ok=True)
@@ -115,8 +116,9 @@ def train(rank, args):
             log_writer = SummaryWriter(log_dir=model_dir)
 
     # Load training and evaluation environments and scenes
-    train_data_path = os.path.join(args.data_dir, args.train_data_dict)
 
+    train_data_path = os.path.join(args.data_dir, args.train_data_dict)
+    print(train_data_path)
     with open(train_data_path, "rb") as f:
         # train_env = dill.load(f, encoding='latin1')
         train_env = dill.load(f)
@@ -260,7 +262,9 @@ def train(rank, args):
     eval_sampler = data.distributed.DistributedSampler(
         eval_data, num_replicas=dist.get_world_size(), rank=rank
     )
-
+    print("HEREEEE")
+    print(model_dir)
+    print(args.device)
     model_registrar = ModelRegistrar(model_dir, args.device)
     # load_model_dir = os.path.join(args.log_dir,
     #                              args.log_tag + '27_Oct_2021_12_47_38')

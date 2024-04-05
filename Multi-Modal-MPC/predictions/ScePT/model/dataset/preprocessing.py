@@ -13,8 +13,8 @@ import pdb
 from nuscenes.map_expansion import arcline_path_utils
 from nuscenes.map_expansion.map_api import NuScenesMap
 import sys, os
-from model.dynamics import *
-from model.model_utils import *
+from ..dynamics import *
+from ..model_utils import *
 from functools import partial
 
 container_abcs = collections.abc

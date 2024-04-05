@@ -4,7 +4,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--conf",
                     help="path to json config file for hyperparameters",
                     type=str,
-                    default='../config/config.json')
+                    default='./predictions/config/clique_ped_config.json')
 
 parser.add_argument("--debug",
                     help="disable all disk writing processes.",
@@ -110,7 +110,7 @@ parser.add_argument('--no_edge_encoding',
 parser.add_argument("--data_dir",
                     help="what dir to look in for data",
                     type=str,
-                    default='../experiments/processed')
+                    default='predictions/experiments/processed')
 
 parser.add_argument("--train_data_dict",
                     help="what file to load for training data",
@@ -125,7 +125,7 @@ parser.add_argument("--eval_data_dict",
 parser.add_argument("--log_dir",
                     help="what dir to save training information (i.e., saved models, logs, etc)",
                     type=str,
-                    default='../experiments/logs')
+                    default='predictions/experiments/logs')
 parser.add_argument("--trained_model_dir",
                     help="the direction of a particular trained model",
                     type=str,

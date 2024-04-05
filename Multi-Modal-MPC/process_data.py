@@ -76,7 +76,7 @@ def augment(scene):
 def main():
     nl = 0
     l = 0
-    maybe_makedirs("predictions/experments/processed")
+    maybe_makedirs("predictions/experiments/processed")
     data_columns = pd.MultiIndex.from_product(
         [["position", "velocity", "acceleration"], ["x", "y"]]
     )
@@ -93,10 +93,12 @@ def main():
             data_dict_path = os.path.join(
                 "predictions/experiments/processed", "_".join([desired_source, data_class]) + ".pkl"
             )
-
+            print(os.getcwd())
             for subdir, dirs, files in os.walk(
-                os.path.join("raw", desired_source, data_class)
-            ):
+                os.path.join("predictions/experiments/pedestrians/raw", desired_source, data_class)):
+                print(f'Current directory: {subdir}')
+                print(f'  Subdirectories: {dirs}')
+                print(f'  Files: {files}\n')
                 for file in files:
                     if file.endswith(".txt"):
                         input_data_dict = dict()

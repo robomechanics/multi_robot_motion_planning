@@ -2,7 +2,6 @@ import os
 import torch
 import torch.nn as nn
 
-
 def get_model_device(model):
     return next(model.parameters()).device
 
@@ -79,6 +78,9 @@ class ModelRegistrar(nn.Module):
 
         print("")
         print("Loading from " + save_path)
+        # save_path = '../experiments/pedestrians/models/ETH_E15_dt0.2/model_registrar-15.pt'
+        print(self.device)
+        print(save_path)
         saved_module = torch.load(save_path, map_location=self.device)
         self.model_dict = saved_module["models"]
         self.param_dict = saved_module["params"]

@@ -1,6 +1,6 @@
 import torch
-from model.dynamics import Dynamic
-from utils import block_diag
+from ..dynamics import Dynamic
+from ...utils import block_diag
 import numpy as np
 
 class DoubleIntegrator(Dynamic):

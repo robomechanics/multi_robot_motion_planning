@@ -7,12 +7,19 @@ from utils import *
 import matplotlib.pyplot as plt
 from uncontrolled_agent import UncontrolledAgent
 from path_planner import calc_spline_course
+import sys
 
-from predictions.ScePT.pred_utils import *
+from predo_utils import *
+# sys.path.append("./predictions/ScePT")
+# thismodule = sys.modules[__name__]
 
 if __name__ == "__main__":
     # initial_states = [[0.0, 0.0, -np.pi/2]]
     # final_states = [[0.0, 3.0, np.pi/2]]
+    if torch.cuda.is_available():
+        backend = "nccl"
+    else:
+        backend = "gloo"
 
     cost_func_params = {
         'Q': np.array([[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]]),
@@ -54,9 +61,17 @@ if __name__ == "__main__":
     # animate_trial("Robust-MPC_n_0.5", 5)
     # results = summarize_results("mm_results")
 
-    # Importing predictions
-
-    
+    # Importing predictions, specify file name etc:
+    # print(sys.path)
+    # sys.path.append('/home/rml/multi_robot_motion_planning/Multi-Modal-MPC/predictions/ScePT')
+    # print(sys.path)
+    args.data_dir = './predictions/experiments/processed/'
+    args.eval_data_dict = "eth_val.pkl"
+    args.trained_model_dir = "04_Apr_2024_16_57_59"
+    args.iter_num = 15
+    args.log_dir = "./predictions/experiments/pedestrians/models/"
+    print(sys.path)
+    _ = load_dataset(0)    
 
     for noise_level in noise_levels:
         for trial in range(num_trials):

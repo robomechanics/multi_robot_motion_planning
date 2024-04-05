@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.distributions as td
 import numpy as np
-from model.model_utils import to_one_hot, simplelinear
+from ..model_utils import to_one_hot, simplelinear
 import pdb
 
 

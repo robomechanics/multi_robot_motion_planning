@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 import numpy as np
-from model.mgcvae_clique import MultimodalGenerativeCVAE_clique
-from model.dataset import (
+from .mgcvae_clique import MultimodalGenerativeCVAE_clique
+from .dataset import (
     get_timesteps_data,
     restore,
     obtain_clique_from_scene,

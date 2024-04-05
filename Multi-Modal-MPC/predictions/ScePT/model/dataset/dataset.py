@@ -14,7 +14,7 @@ except ImportError:
 
 from .preprocessing import get_node_timestep_data
 from tqdm import tqdm
-from environment import EnvironmentMetadata
+from ...environment import EnvironmentMetadata
 from functools import partial
 from pathos.multiprocessing import ProcessPool as Pool
 

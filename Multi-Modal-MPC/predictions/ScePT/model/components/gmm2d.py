@@ -2,7 +2,7 @@ import torch
 import torch
 import torch.distributions as td
 import numpy as np
-from model.model_utils import to_one_hot
+from ..model_utils import to_one_hot
 
 
 class GMM2D(td.Distribution):

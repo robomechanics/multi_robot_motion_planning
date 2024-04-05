@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from model.components import AdditiveAttention
-from model.model_utils import *
+from . import AdditiveAttention
+from ..model_utils import *
 import pdb
 from collections import defaultdict
 

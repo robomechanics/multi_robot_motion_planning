@@ -3,15 +3,15 @@ import warnings
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from model.components import *
-from model.model_utils import *
-import model.dynamics as dynamic_module
-import model.components as model_components
-from environment.scene_graph import DirectedEdge
+from .components import *
+from .model_utils import *
+from . import dynamics as dynamic_module
+from . import components as model_components
+from ..environment.scene_graph import DirectedEdge
 import pdb
 import itertools
 import sys
-from utils import CVaR, CVaR_weight
+from ..utils import CVaR, CVaR_weight
 from functools import partial
 
 thismodule = sys.modules[__name__]

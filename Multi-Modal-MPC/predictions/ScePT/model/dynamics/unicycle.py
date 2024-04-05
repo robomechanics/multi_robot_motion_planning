@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
-from model.dynamics import Dynamic
-from utils import block_diag
-from model.components import GMM2D
+from ..dynamics import Dynamic
+from ...utils import block_diag
+from ..components import GMM2D
 import pdb
 import numpy as np
 

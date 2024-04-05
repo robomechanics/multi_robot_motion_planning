@@ -11,24 +11,27 @@ import pathlib
 from tqdm import tqdm
 # import visualization
 import matplotlib.pyplot as plt
-from argument_parser import args
-from model.ScePT import ScePT
-from model.components import *
-from model.model_registrar import ModelRegistrar
-from model.dataset import *
+from predictions.ScePT.argument_parser import args
+from predictions.ScePT.model.ScePT import ScePT
+from predictions.ScePT.model.components import *
+from predictions.ScePT.model.model_registrar import ModelRegistrar
+from predictions.ScePT.model.dataset import *
 from torch.utils.tensorboard import SummaryWriter
-from model.mgcvae_clique import MultimodalGenerativeCVAE_clique
-from Planning import FTOCP
+from predictions.ScePT.model.mgcvae_clique import MultimodalGenerativeCVAE_clique
+from predictions.ScePT.Planning import FTOCP
 import pdb
-from model.components import *
-from model.model_utils import *
-from model.dynamics import *
+from predictions.ScePT.model.components import *
+from predictions.ScePT.model.model_utils import *
+from predictions.ScePT.model.dynamics import *
 from torch.utils.data import Dataset, DataLoader
 import time
 import matplotlib.image as mpimg
 import matplotlib.patches as patches
 import re
 from matplotlib import animation
+from predictions.ScePT.model import model_utils
+from predictions.ScePT.environment import *
+
 
 # torch.autograd.set_detect_anomaly(True)
 
@@ -37,7 +40,7 @@ import torch.distributed as dist
 
 from functools import partial
 from pathos.multiprocessing import ProcessPool as Pool
-import model.dynamics as dynamic_module
+import predictions.ScePT.model.dynamics as dynamic_module
 from scipy import linalg, interpolate
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -103,7 +106,7 @@ class Scene:
         plt.show()
 
 
-#Add Ellipses during Plotting
+# Add Ellipses during Plotting
 class Predictions:
     def __init__(self, dt):
         self.timestamps = []
@@ -199,7 +202,15 @@ def load_dataset(rank):
     else:
         args.device = f"cpu"
 
+    # def find_module(module_name):
+
+    #     if module_name == 'environment':
+    #         import environment  # Import the module
+    #         return environment  # Return the module object
+    
+
     data_path = os.path.join(args.data_dir, args.eval_data_dict)
+    print(data_path)
     with open(data_path, "rb") as f:
         env = dill.load(f)
     # print(env.scenes)
@@ -213,7 +224,6 @@ def load_dataset(rank):
     hyperparams["offline_scene_graph"] = args.offline_scene_graph
     hyperparams["incl_robot_node"] = args.incl_robot_node
 
-    hyperparams["edge_encoding"] = not args.no_edge_encoding
 
     model_registrar = ModelRegistrar(model_dir, args.device)
     ScePT_model = ScePT(model_registrar, hyperparams, None, args.device)
@@ -272,7 +282,7 @@ def load_dataset(rank):
         scept_predictions = load_predictions(results, None, env.dt, num_traj_show)
         pedestrians = UncontrolledAgent([1,1,1])
         convertScePT2Pred(scept_predictions, pedestrians.uncontrolled_fleet_data, 1, 2)
-    return
+    return pedestrians
 
 def load_predictions(results, map, dt, num_traj_show):
     """
@@ -315,7 +325,7 @@ def load_predictions(results, map, dt, num_traj_show):
         # current_scene.visualize_scene()
     
     # Display Scene Animation
-    # predictions.animate_scene(record=False)
+    predictions.animate_scene(record=False)
     return predictions
 
 def convertScePT2Pred(scept_predictions, fleet_data, pred_length, num_modes):
@@ -356,10 +366,10 @@ def convertScePT2Pred(scept_predictions, fleet_data, pred_length, num_modes):
 
     return fleet_data
 
-if __name__ == "__main__":
-    if torch.cuda.is_available():
-        backend = "nccl"
-    else:
-        backend = "gloo"
-    # Generate and Display Animation of Predicted Pedestrians Trajectories
-    eval(args.eval_task)(args.local_rank)
+# if __name__ == "__main__":
+#     if torch.cuda.is_available():
+#         backend = "nccl"
+#     else:
+#         backend = "gloo"
+#     # Generate and Display Animation of Predicted Pedestrians Trajectories
+#     eval(args.eval_task)(args.local_rank)
