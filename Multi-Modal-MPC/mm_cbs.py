@@ -22,7 +22,7 @@ class MM_CBS(MPC_Base):
         
         N_samples = 50
         
-        N_t = multivariate_normal.rvs(np.zeros(self.N), np.eye(self.N), N_samples)
+        N_t = multivariate_normal.rvs(np.zeros(2*self.N), np.eye(2*self.N), N_samples)
         
         collision_prob = 0.
         num_collisions = [0 for _ in range(self.num_modes)]
@@ -67,9 +67,10 @@ class MM_CBS(MPC_Base):
                 else:
                     resolved.append([agent_id, obs_id, mode])
             else:
+                # Cycle through other previously obtained policies
                 for o_mode, feedback_gains in rob_sol['pol_gains'][obs_id].items():
                     if feedback_gains is not None:
-                        # Do collision check below. IF it didnt pass, try with anoteher gain
+                        # Do collision check below, by  IF it didnt pass, try with anoteher gain
                         feedback_bias = rob_sol['pol_bias'][obs_id][o_mode]
                         other_obs_modes = {o_idx: m for o_idx, m in n_modes.items() if o_idx!=obs_id}
                         
@@ -99,7 +100,7 @@ class MM_CBS(MPC_Base):
 
                                 num_collisions[mode]+=min(np.linalg.norm(rob_pos_dist.reshape((2,-1))-obs_dist.reshape((2,-1)), axis=0))<=min_distance
                             
-                        num_collisions[mode]=num_collisions[mode]/N_samples*mode_prob[mode]
+                        num_collisions[mode]=num_collisions[mode]/N_samples/len(obs_mode_combinations)*mode_prob[mode]
                         if num_collisions[mode] <= self.delta:
                             rob_sol['pol_gains'][obs_id][mode] = feedback_gains
                             rob_sol['pol_bias'][obs_id][mode] = feedback_bias
@@ -244,10 +245,10 @@ class MM_CBS(MPC_Base):
                 x_lin[t+1,:]=self.model.fCd(x_lin[t,:], u_lin[t,:])
 
         for t in range(self.N):
-            # if u_lin[t,0] > 0 and u_lin[t,0] < 0.1 :
-            #     u_lin[t,0]=0.1
-            # elif u_lin[t,0] < 0 and u_lin[t,0]> -0.1:
-            #     u_lin[t,0]=-0.1
+            if u_lin[t,0] > 0 and u_lin[t,0] < 0.1 :
+                u_lin[t,0]=0.1
+            elif u_lin[t,0] < 0 and u_lin[t,0]> -0.1:
+                u_lin[t,0]=-0.1
             A[t]=self.model.fAd(x_lin[t,:], u_lin[t,:])
             B[t]=self.model.fBd(x_lin[t,:], u_lin[t,:])
             C[t]=x_lin[t+1,:].T-A[t]@x_lin[t,:].T-B[t]@u_lin[t,:].T
@@ -290,21 +291,22 @@ class MM_CBS(MPC_Base):
         """ 
         T_obs=ca.DM(2*(self.N+1), 2)
         c_obs=ca.DM(2*(self.N+1), 1) 
-        E_obs=ca.DM(2*(self.N+1),self.N)
+        E_obs=ca.DM(2*(self.N+1),2*self.N)
 
         for t in range(self.N+1):
             T_obs[t*2:(t+1)*2,:]=ca.DM.eye(2)
             if t>0:
                 
-                theta = mean_traj[min(t, self.N-1)][2]
-                B=self.dt*ca.DM([np.cos(theta), np.sin(theta)])
+                # theta = mean_traj[min(t, self.N-1)][2]
+                # B=self.dt*ca.DM([np.cos(theta), np.sin(theta)])
 
-                v=mean_inputs[min(t,self.N-1)][0]
-                c_obs[t*2:(t+1)*2,:]=c_obs[(t-1)*2:t*2,:]+B@v
-
-                E=B@covar_inputs[t-1][0,0]**(0.5)
+                # v=mean_inputs[min(t,self.N-1)][0]
+                # c_obs[t*2:(t+1)*2,:]=c_obs[(t-1)*2:t*2,:] + mean_inputs[t]-mean_inputs[t-1] 
+                c_obs[t*2:(t+1)*2,:]=ca.DM(mean_inputs[t])-ca.DM(mean_inputs[0])
+                
+                E=ca.sqrt(covar_inputs[t-1])
                 E_obs[t*2:(t+1)*2,:]=E_obs[(t-1)*2:t*2,:]    
-                E_obs[t*2:(t+1)*2,(t-1)*1:t*1]=E
+                E_obs[t*2:(t+1)*2,(t-1)*2:t*2]=E
 
         return T_obs, c_obs, E_obs
 
@@ -443,7 +445,7 @@ class MM_CBS(MPC_Base):
                 
                 obs_xy_cov = self.obs_affine_model[obs_idx][j]['covars']
      
-                total_cost+= ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
+                total_cost+= 5*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
                 
                 pol_gains[obs_idx][j]=K_stack
                 
@@ -553,8 +555,7 @@ class MM_CBS(MPC_Base):
                 next_states_pred[0].append(self.model.fCd(next_states_pred[0][-1],self.feedforward[t,:]).T)
             next_states_pred[0] = ca.vertcat(*next_states_pred[0])
             # eps_o = sol.value(opt_epsilon_o)
-         
-            
+             
             self.prev_states[agent_id] = next_states_pred[0]
             
             self.prev_controls[agent_id] = self.feedforward
@@ -680,14 +681,14 @@ class MM_CBS(MPC_Base):
             obs_id = 0
             conflicts, resolved, collision_prob = self._collision_check(0,  rob_sol, obs_id, obs_pred, obs_constraints)
            
-            # while len(conflicts)==0 and obs_id+1 < self.n_obs:
-            #     obs_id+=1
-            #     conflicts, resolved, collision_prob = self._collision_check(0,  rob_sol, obs_id, obs_pred, obs_constraints)
+            while len(conflicts)==0 and obs_id+1 < self.n_obs:
+                obs_id+=1
+                conflicts, resolved, collision_prob = self._collision_check(0,  rob_sol, obs_id, obs_pred, obs_constraints)
             
-            # if len(conflicts)> 0:
-            #     obs_constraints[obs_id].append([c[-1] for c in conflicts if c[1]==obs_id])
-            print(f"Collision Probs: {collision_prob}")
-            MPC_constraints = obs_constraints
+            if len(conflicts)> 0:
+                obs_constraints[obs_id].append([c[-1] for c in conflicts if c[1]==obs_id])
+            print(f"Collision Probs: {collision_prob}, conflicts: {obs_constraints}")
+            # MPC_constraints = obs_constraints
            
             node = MM_Node(0, rob_sol,
                             conflicts,
