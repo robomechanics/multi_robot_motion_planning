@@ -11,6 +11,7 @@ from scipy.stats import multivariate_normal
 from matplotlib.colors import TwoSlopeNorm, ListedColormap
 from matplotlib.colors import Normalize
 from matplotlib.patches import Rectangle
+plt.rcParams['figure.dpi'] = 200  # Increase display resolution in the notebook or scripts
 
 class MPC_Base:
     def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=None, ref=None, feedback=None, robust_horizon=None, mle=False):
@@ -239,16 +240,23 @@ class MPC_Base:
     def plot_gmm_means_and_state(self, current_state, current_prediction, gmm_data=None, mode_prob=None, ref=None):
         self.ax1.clear()  # Clear the main axes
         self.ax_prob.clear()  # Clear the mode probability axes
-        self.ax1.axvline(x=-0.5, color='k', linestyle='--')
-        self.ax1.axvline(x=0.5, color='k', linestyle='--')
+        self.ax1.axvline(x=-0.6, color='k', linestyle='--')
+        self.ax1.axvline(x=0.6, color='k', linestyle='--')
 
         # Set the title and labels for the main plot
         self.ax1.set_xlim(-4, 4)
         self.ax1.set_ylim(-4, 4)
 
+        # Calculate the scaled alpha values
+        max_alpha = 0.6
+        if mode_prob is not None:
+            scaled_alpha = [prob * max_alpha for prob in mode_prob]
+        else:
+            scaled_alpha = [max_alpha] * 2  # Default to max alpha if no mode_prob provided
+
         # Plotting the GMM predictions as scattered points
-        colors = plt.cm.get_cmap('hsv', self.n_obs*self.num_modes+1)
-        for agent_pred in gmm_data:
+        colors = ['r', 'g']
+        for idx, agent_pred in enumerate(gmm_data):
             for mode, data in enumerate(agent_pred.values(), start=0):
                 means = np.array(data['means'])
                 cov = np.array(data['covariances'])
@@ -256,8 +264,9 @@ class MPC_Base:
                     # Assume the covariance matrix is 2x2 and compute the radius for the circle
                     # Here, we're taking the average of the variances for simplicity
                     radius = np.sqrt((cov_matrix[0, 0] + cov_matrix[1, 1]) / 2)
-                    circle = plt.Circle((mean[0], mean[1]), radius, color=colors(mode), alpha=0.2)
-                    # self.ax.add_patch(circle)
+                    alpha = scaled_alpha[mode]
+                    circle = plt.Circle((mean[0], mean[1]), radius, color=colors[mode], alpha=alpha)
+                    self.ax1.add_patch(circle)
 
         # Plotting predictions
         if(isinstance(current_prediction, list)):
@@ -280,7 +289,7 @@ class MPC_Base:
                     rob_xy = np.ravel(rob).reshape(-1, 2)
 
                     # Plot obstacles trajectory for this sample
-                    self.ax1.scatter(obs_xy[:, 0], obs_xy[:, 1], color=colors[mode], alpha=1, linewidth=2, label=f'Obstacles Mode {mode}' if obs is obs_samples[0] else "")
+                    # self.ax1.scatter(obs_xy[:, 0], obs_xy[:, 1], color=colors[mode], alpha=1, linewidth=2, label=f'Obstacles Mode {mode}' if obs is obs_samples[0] else "")
 
                     # Plot robot trajectory for this sample
                     self.ax1.plot(rob_xy[:, 0], rob_xy[:, 1], color=colors[mode], alpha=0.2, linewidth=1, label=f'Robot Mode {mode}' if rob is rob_samples[0] else "") 
@@ -379,7 +388,7 @@ class MPC_Base:
 
             # Label axes.
             ax.set_xticks([0.5, 1.5])
-            ax.set_xticklabels(['x', 'y'])
+            ax.set_xticklabels(['x', 'y'],fontsize=14)
             ax.set_yticks(np.arange(diagonal_matrix.shape[0]) + 0.5)
             ax.set_yticklabels(np.arange(1, diagonal_matrix.shape[0] + 1))
 
