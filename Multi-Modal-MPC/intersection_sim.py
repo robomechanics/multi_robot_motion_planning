@@ -240,7 +240,7 @@ class Simulator():
                             v.cl = random.choice([8,9])
 
         self.ev.traj_glob[:,self.ev.t]=np.array(self.routes[self.ev.cl](self.ev.traj[0,self.ev.t])[:3]).squeeze()
-        if not u_ev:
+        if u_ev is not None:
             v_ =[self.agents[k].traj[:,v.t] for k in self.tv_idxs]
             cl_=[v.cl for v in self.tvs]
             v_des, dv, ds= self._get_idm_params(self.ev.traj[:,self.ev.t], self.ev.cl, v_, cl_,verbose)
@@ -258,7 +258,7 @@ class Simulator():
 
         update_dict={'x0': self.ev.traj[:,self.ev.t], 'u_prev': u_prev ,
                      'o0': [v.traj[:,v.t] for v in self.agents if v!=self.ev], 'o_glob': mm_o_glob, 
-                     'routes': mm_routes, 'droutes': mm_droutes, 'Qs' : mm_Qs,
+                     'routes': mm_routes, 'droutes': mm_droutes, 'Qs' : mm_Qs, 'noise_std' : [v.noise_std for v in self.agents if v!=self.ev],
                      'z_lin': z_lin, 'x_pos':x_pos,  'dpos': dpos, 'u_tvs': mm_u_tvs }
         
         self.mm_preds.append(mm_o_glob)
@@ -307,8 +307,7 @@ class Simulator():
                 
             else:
                 a=u_opt[t]
-                
-   
+
             x[:,t+1]=self.ev.get_next(x[:,t+1], a)
             x_glob[:,t+1]=self.routes[self.ev.cl](x[0,t+1])[:2]
             dx_glob[t]=self.droutes[self.ev.cl](x[0,t+1])[:2]
@@ -358,7 +357,8 @@ class Simulator():
         mm_droutes = [[copy.deepcopy(do_glob[i]) for _ in range(self.n_modes[i])] for i,v in enumerate(self.agents) if v!=self.ev]
 
         for i in tv_list:
-            modes=set(self.modes[self.sources[self.agents[i].cl]])-set([self.agents[i].cl])
+            modes=list(set(self.modes[self.sources[self.agents[i].cl]])-set([self.agents[i].cl]))[:-3]
+            
             
             for t in range(N):
                 psi= self.routes[self.ev.cl](x[0,t+1])[2]
@@ -367,9 +367,11 @@ class Simulator():
                 if  (self.sources[self.agents[i].cl]=="E" and self.agents[i].traj[0,self.t]<=self.routes_pose[2][-1,-1]+3.)\
                  or (self.sources[self.agents[i].cl]=="W" and self.agents[i].traj[0,self.t]<=51.+3.):
                     for j in modes:
+                        
                         n=self.modes[self.sources[self.agents[i].cl]].index(j)
                         
                         if t==0:
+                           
                             mm_routes[i][n]=self.routes[j]
                         idx_=set(tv_list)-set([i])
                         v_ =[o[k][:,t] for k in idx_]+[x[:,t]]
@@ -390,20 +392,21 @@ class Simulator():
                         mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=4 else (1/5**2)*np.eye(2)
                         
         for i in ped_list:
-            modes=set(self.modes[self.sources[self.agents[i].cl]])-set([self.agents[i].cl])
+            modes=list(set(self.modes[self.sources[self.agents[i].cl]])-set([self.agents[i].cl]))[-2:]
             
             for t in range(N):
                 psi= self.routes[self.ev.cl](x[0,t+1])[2]
                 Rev=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze().T
                 
                 for j in modes:
-                    n=self.modes[self.sources[self.agents[i].cl]].index(j)
+                    n=self.modes[self.sources[self.agents[i].cl]].index(j) -(len(self.modes[self.sources[self.agents[i].cl]])-3)
                     
                     if n+1== len(self.modes[self.sources[self.agents[i].cl]]) and self.agents[i].traj[0,self.t]>=1.0:
                         continue
                     else:
                     
                         if t==0:
+                           
                             mm_routes[i][n]=self.routes[j]
                         v_des = self.routes[j](.0+mm_o[i][n][0,t+1])[3]
                         a=self.agents[i].idm(v_des)
@@ -465,16 +468,17 @@ class Simulator():
         straights_x.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
         s_r=np.linspace(s[0], s[-1])
-        r_p=np.array([r_fun(s_r[i])[:3] for i in range(s_r.shape[0])]).squeeze()
-        self.routes_pose.append(np.vstack((r_p.T,s_r.reshape((1,-1)))))
+   
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
 
         # 1 : E->W
         r_fun=_make_ca_fun(s,xs[::-1],ys+15., psis, vs)
         straights_x.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
         s_r=np.linspace(s[0], s[-1])
-        r_p=np.array([r_fun(s_r[i])[:3] for i in range(s_r.shape[0])]).squeeze()
-        self.routes_pose.append(np.vstack((r_p.T,s_r.reshape((1,-1)))))
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
 
         # 2 : E->W
         s=np.array([0,29])
@@ -485,8 +489,8 @@ class Simulator():
         straights_x.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
         s_r=np.linspace(s[0], s[-1])
-        r_p=np.array([r_fun(s_r[i])[:3] for i in range(s_r.shape[0])]).squeeze()
-        self.routes_pose.append(np.vstack((r_p.T,s_r.reshape((1,-1)))))
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
         
         
         lefts_x=[]        
@@ -505,8 +509,8 @@ class Simulator():
         lefts_x.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
         s_r=np.linspace(s[0], s[-1])
-        r_p=np.array([r_fun(s_r[i])[:3] for i in range(s_r.shape[0])]).squeeze()
-        self.routes_pose.append(np.vstack((r_p.T,s_r.reshape((1,-1)))))
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
 
         lefts = lefts_x
 
@@ -524,8 +528,8 @@ class Simulator():
         rights.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
         s_r=np.linspace(s[0], s[-1])
-        r_p=np.array([r_fun(s_r[i])[:3] for i in range(s_r.shape[0])]).squeeze()
-        self.routes_pose.append(np.vstack((r_p.T,s_r.reshape((1,-1)))))
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
         
         ped_cross =[]
         # 5 : W->E (run)
@@ -538,8 +542,8 @@ class Simulator():
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
         s_r=np.linspace(s[0], s[-1])
-        r_p=np.array([r_fun(s_r[i])[:3] for i in range(s_r.shape[0])]).squeeze()
-        self.routes_pose.append(np.vstack((r_p.T,s_r.reshape((1,-1)))))
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
         
         # 6 : W->E (walk)
         s=np.array([0,31])
@@ -551,8 +555,8 @@ class Simulator():
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
         s_r=np.linspace(s[0], s[-1])
-        r_p=np.array([r_fun(s_r[i])[:3] for i in range(s_r.shape[0])]).squeeze()
-        self.routes_pose.append(np.vstack((r_p.T,s_r.reshape((1,-1)))))
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
         
         # 7 : W->E (yield)
         s=np.array([0,1])
@@ -564,8 +568,8 @@ class Simulator():
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
         s_r=np.linspace(s[0], s[-1])
-        r_p=np.array([r_fun(s_r[i])[:3] for i in range(s_r.shape[0])]).squeeze()
-        self.routes_pose.append(np.vstack((r_p.T,s_r.reshape((1,-1)))))
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
         
 
         # 8 : E->W (run)
@@ -578,8 +582,8 @@ class Simulator():
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
         s_r=np.linspace(s[0], s[-1])
-        r_p=np.array([r_fun(s_r[i])[:3] for i in range(s_r.shape[0])]).squeeze()
-        self.routes_pose.append(np.vstack((r_p.T,s_r.reshape((1,-1)))))
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
         
         # 9 : E->W (walk)
         vs=np.array([2., 0.])
@@ -587,8 +591,8 @@ class Simulator():
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
         s_r=np.linspace(s[0], s[-1])
-        r_p=np.array([r_fun(s_r[i])[:3] for i in range(s_r.shape[0])]).squeeze()
-        self.routes_pose.append(np.vstack((r_p.T,s_r.reshape((1,-1)))))
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
         
         # 10 : E->W (yield)
         s=np.array([0,1])
@@ -598,8 +602,8 @@ class Simulator():
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
         s_r=np.linspace(s[0], s[-1])
-        r_p=np.array([r_fun(s_r[i])[:3] for i in range(s_r.shape[0])]).squeeze()
-        self.routes_pose.append(np.vstack((r_p.T,s_r.reshape((1,-1)))))
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
 
         straights = straights_x
         
@@ -680,6 +684,7 @@ if __name__=="__main__":
     while Sim.t<250 and not Sim.done():
         # print("Time: ",Sim.t)
         # smpc.update(Sim.get_update_dict())
+        # print(Sim.get_update_dict())
         # sol=smpc.solve()
         # Sim.step(sol["u_control"])
         Sim.step()

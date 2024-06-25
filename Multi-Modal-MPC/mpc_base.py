@@ -22,7 +22,7 @@ class MPC_Base:
         self.epsilon_r = mpc_params['epsilon_r']
         self.safety_margin = mpc_params['safety_margin']
         self.linearized_ca = mpc_params['linearized_ca']
-        self.prob_thresh   = mpc_params['mode_conf_prob_thresh']
+        self.prob_thresh   = 0.1#mpc_params['mode_conf_prob_thresh']
         self.initial_state = initial_state
         self.final_state = final_state
         self.cost_func_params = cost_func_params
@@ -31,7 +31,7 @@ class MPC_Base:
         self.uncontrolled_fleet = uncontrolled_fleet
         self.uncontrolled_fleet_data = uncontrolled_fleet_data
         self.delta = 0.05
-        self.num_modes = 2
+        self.num_modes = 3
         self.robust_horizon = robust_horizon
         self.feedback = feedback
 
@@ -42,8 +42,12 @@ class MPC_Base:
         self.control_cache = {agent_id: [] for agent_id in range(self.num_agent)}
 
         # variables holding previous solutions
-        self.prev_states = {agent_id: np.zeros((self.N+1, 3)) for agent_id in range(self.num_agent)}
-        self.prev_controls = {agent_id: np.zeros((self.N, 2)) for agent_id in range(self.num_agent)}
+        # self.prev_states = {agent_id: np.zeros((self.N+1, 3)) for agent_id in range(self.num_agent)}
+        # self.prev_controls = {agent_id: np.zeros((self.N, 2)) for agent_id in range(self.num_agent)}
+        # self.prev_epsilon_o = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
+        # self.prev_epsilon_r = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
+        self.prev_states = {agent_id: np.zeros((self.N+1, 2)) for agent_id in range(self.num_agent)}
+        self.prev_controls = {agent_id: np.zeros((self.N, 1)) for agent_id in range(self.num_agent)}
         self.prev_epsilon_o = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
         self.prev_epsilon_r = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
         
