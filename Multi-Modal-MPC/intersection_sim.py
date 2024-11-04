@@ -57,7 +57,7 @@ class Simulator():
         '''
         Our IDM-based Interaction Engine
         '''
-        v_des=self.routes[cl](v[0]+2.0)[-1]
+        v_des=self.routes[cl](v[0]+.5)[-1]
 
         dv   =0.0 
         ds   =1e5
@@ -83,12 +83,13 @@ class Simulator():
             if self.sinks[cl]==self.sinks[clh]:
                 
                 vh_pos=self.routes[clh](vh[0]-.0)[:2].reshape((-1,1))
+                v_pos = self.routes[cl](v[0]-.0)[:2].reshape((-1,1))
                 vh_s=self._g2f(vh_pos,cl)
                 v_s_on_vh = self._g2f(self.routes[cl](v[0]-.0)[:2].reshape((-1,1)),clh)
                 vh_psi=self.routes[clh](vh[0])[2]
 
-                if np.abs(np.sin(float(2*psi)))<=1e-3 and vh_s-v[0]>=0. and vh_s-v[0]<=10. and self._check_out_inter(cl,v[0]):
-                    if (vh[1]>=1 and vh_s-v[0]<=10) and (1<=(v_s_on_vh - vh[0]) <= 15):
+                if np.abs(np.sin(float(2*psi)))<=1e-3 and vh_s-v[0]>=0. and vh_s-v[0]<=6. and self._check_out_inter(cl,v[0]) :
+                    if (vh[1]>=1 and vh_s-v[0]<=10) and (1<=(v_s_on_vh - vh[0]) <= 10) and np.linalg.norm(vh_pos-v_pos)<5:
                         ds=0.01
                         dv=8
                         if verbose:
@@ -96,13 +97,13 @@ class Simulator():
                     else:
                         ds=max(vh_s-v[0]-6.,0.01) 
                         dv=v[1]-vh[1]*np.cos(psi-vh_psi)
-                        dv+= 5. if 2*float(psi)%np.pi==0 else -5.
+                        dv+= 1. if 2*float(psi)%np.pi==0 else -5.
 
                         if verbose:
                             print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Branch #3: Keep Going. Vehicle ahead')
                             
                         
-                        if vh[1]<0 and np.abs(np.sin(2*psi))>=0.001: #if vh is hestitating, just go
+                        if np.linalg.norm(vh_pos-v_pos)<10 or (vh[1]<0 and np.abs(np.sin(2*psi))>=0.001): #if vh is hestitating, just go
                             ds = 1e5
                             dv = 0.0
 
@@ -123,21 +124,21 @@ class Simulator():
                 vh_psi=self.routes[clh](vh[0]+0.)[2]
 
                 p2p1=-self.routes[cl](v[0]+0.)[:2].reshape((-1,1))+vh_pos
-                d1 = self.droutes[cl](v[0]+0.)[:2].reshape((-1,1))*20.      #30 m lookahead
-                d2 = self.droutes[clh](vh[0]-.0)[:2].reshape((-1,1))*20.
+                d1 = self.droutes[cl](v[0]+0.)[:2].reshape((-1,1))*10.      #30 m lookahead
+                d2 = self.droutes[clh](vh[0]-.0)[:2].reshape((-1,1))*10.
                 d1cd2, pcd2, pcd1  =ca.det(ca.horzcat(d1,d2)), ca.det(ca.horzcat(p2p1, d2)), ca.det(ca.horzcat(p2p1, d1))
 
                 if int(d1cd2 > 0 or d1cd2 < 0)==1:
                     t, u = pcd2/d1cd2, pcd1/d1cd2
                     if bool(0.<=t<=1.) and bool(0.<=u<=1.):
-                        if np.abs(np.sin(float(psi)))<=1e-3 and vh_s-v[0]>=0.5 and np.linalg.norm(p2p1)<=30. and self._check_out_inter(cl,v[0]):
+                        if np.abs(np.sin(float(psi)))<=1e-3 and vh_s-v[0]>=0.5 and np.linalg.norm(p2p1)<=10. and self._check_out_inter(cl,v[0]):
                             # if vh[1]>=2.:
                             ds=0.01
                             dv=8.
                             if verbose:
                                 print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Branch #5: Yield')
                             
-                        elif vh_s-v[0]-6.0<0. and vh_s-v[0]>=0.5 and np.linalg.norm(p2p1)<=20. and not self._check_out_inter(clh,vh[0]):
+                        elif vh_s-v[0]-6.0<0. and vh_s-v[0]>=0.5 and np.linalg.norm(p2p1)<=10. and not self._check_out_inter(clh,vh[0]):
                             ds=max(vh_s-v[0]-6.0,0.01)
                             dv=v[1]-vh[1]*np.cos(psi-vh_psi)
                             dv+=6. if np.abs(np.sin(float(psi)))<=1e-3 else 2.
@@ -248,7 +249,8 @@ class Simulator():
                     v_ =[self.agents[k].traj[:,v.t] for k in idx_] + [self.ev.traj[:,v.t]]
                     cl_=[self.agents[k].cl for k in idx_] + [self.ev.cl]
                     v_des, dv, ds= self._get_idm_params(v.traj[:,v.t], v.cl, v_, cl_, verbose)
-                    v.step(v.clip_vel_acc(v.traj[:,v.t],v.idm(v_des, dv, ds)))
+                    a = v.clip_vel_acc(v.traj[:,v.t],v.idm(v_des, dv, ds)) 
+                    v.step(a)
                 else:
                     v_des = self.routes[v.cl](.0+v.traj[0,v.t])[3]
                     v.step(v.idm(v_des))
@@ -273,13 +275,14 @@ class Simulator():
     
     def get_update_dict(self, u_opt=None):
 
-        z_lin, x_pos, dpos, mm_o_glob, mm_u_tvs, mm_routes, mm_droutes, mm_Qs =self._get_preds(u_opt)
+        z_lin, x_pos, dpos, mm_o_glob, mm_u_tvs, mm_routes, mm_droutes, mm_Qs, Revs =self._get_preds(u_opt)
         u_prev=self.ev.u[self.ev.t-1] if self.ev.t>0 else 0.
 
         update_dict={'x0': self.ev.traj[:,self.ev.t], 'u_prev': u_prev ,
                      'o0': [v.traj[:,v.t] for v in self.agents if v!=self.ev], 'o_glob': mm_o_glob, 
                      'routes': mm_routes, 'droutes': mm_droutes, 'Qs' : mm_Qs, 'noise_std' : [v.noise_std for v in self.agents if v!=self.ev],
-                     'z_lin': z_lin, 'x_pos':x_pos,  'dpos': dpos, 'u_tvs': mm_u_tvs }
+                     'z_lin': z_lin, 'x_pos':x_pos,  'dpos': dpos, 'u_tvs': mm_u_tvs, 'route_fun': self.routes[self.ev.cl],
+                     'sizes':[v.veh_dims for v in self.agents if v!=self.ev], 'Revs': Revs}
         
         self.mm_preds.append(mm_o_glob)
 
@@ -312,6 +315,7 @@ class Simulator():
         ped_list = self.ped_idxs
         do_glob = [[ca.DM(2,1) for _ in range(N)] for v in self.agents if v!=self.ev]
         Qs = [[np.identity(2) for _ in range(N)] for v in self.agents if v!=self.ev]
+        Revs = [np.identity(2) for _ in range(N)]
         iSev=np.linalg.inv(self.ev.S)
         iSev[-1,-1]+=0.3
         Sev=np.linalg.inv(iSev)
@@ -328,20 +332,24 @@ class Simulator():
             else:
                 a=u_opt[t]
 
-            x[:,t+1]=self.ev.get_next(x[:,t+1], a)
+            x[:,t+1]=self.ev.get_next(x[:,t], a)
             x_glob[:,t+1]=self.routes[self.ev.cl](x[0,t+1])[:2]
             dx_glob[t]=self.droutes[self.ev.cl](x[0,t+1])[:2]
             psi= self.routes[self.ev.cl](x[0,t+1])[2]
             Rev=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze().T
             
+            Revs[t] = Rev
+            
             for i in tv_list:
-                idx_=set(tv_list)-set([i])
+                idx_=set(tv_list+ped_list)-set([i])
+                # idx_=set(tv_list)-set([i])
                 v_ =[o[k][:,t] for k in idx_] + [x[:,t]]
    
                 cl_=[self.agents[k].cl for k in idx_] + [self.ev.cl]
 
                 v_des, dv, ds= self._get_idm_params(o[i][:,t], self.agents[i].cl, v_, cl_)
                 a=self.agents[i].clip_vel_acc(o[i][:,t],self.agents[i].idm(v_des, dv, ds))
+                # a = 0
                 u_tvs[i][0,t]=a
                 o[i][:,t+1]=self.agents[i].get_next(o[i][:,t], a)
                 o_glob[i][:,t+1]=self.routes[self.agents[i].cl](o[i][0,t+1])[:2]
@@ -352,7 +360,8 @@ class Simulator():
                 mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T
                 E, V =np.linalg.eigh(mat)
                 S=np.diag((E**(-0.5)+1.0)**(-2))
-                Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=4 else (1/2**2)*np.eye(2)
+                Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=12 else (1/2**2)*np.eye(2)
+                Qs[i][t]  = Rtv.T@Rev
                 
             for i in ped_list:
                 v_des = self.routes[self.agents[i].cl](0.+o[i][0,t+1])[3]
@@ -366,8 +375,9 @@ class Simulator():
 
                 mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T
                 E, V =np.linalg.eigh(mat)
-                S=np.diag((E**(-0.5)+1.0)**(-2))
-                Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=10 else (1/0.1**2)*np.eye(2)
+                S=np.diag((E**(-0.5)+1.2)**(-2))
+                # Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev #if t <=12 else (1/0.1**2)*np.eye(2)
+                Qs[i][t]  = Rtv.T@Rev
                 
         mm_o      = [[copy.deepcopy(o[i]) for _ in range(self.n_modes[i])] for i,v in enumerate(self.agents) if v!=self.ev]
         mm_o_glob = [[copy.deepcopy(o_glob[i]) for _ in range(self.n_modes[i])] for i,v in enumerate(self.agents) if v!=self.ev]
@@ -394,13 +404,14 @@ class Simulator():
                         if t==0:
                            
                             mm_routes[i][n]=self.routes[j]
-                        idx_=set(tv_list)-set([i])
+                        idx_=set(tv_list+ped_list)-set([i])
+                        # idx_=set(tv_list)-set([i])
                         v_ =[o[k][:,t] for k in idx_]+[x[:,t]]
                         cl_=[self.agents[k].cl for k in idx_]+[self.ev.cl]
 
                         v_des, dv, ds= self._get_idm_params(mm_o[i][n][:,t], j, v_, cl_)
                         a=self.agents[i].clip_vel_acc(mm_o[i][n][:,t],self.agents[i].idm(v_des, dv, ds))
-
+                        # a = 0
                         mm_o[i][n][:,t+1]=self.agents[i].get_next(mm_o[i][n][:,t], a)
                         mm_o_glob[i][n][:,t+1]=self.routes[j](mm_o[i][n][0,t+1])[:2]
                         mm_droutes[i][n][t]=self.droutes[j](mm_o[i][n][0,t+1])[:2]
@@ -410,7 +421,8 @@ class Simulator():
                         mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T 
                         E, V =np.linalg.eigh(mat)
                         S=np.diag((E**(-0.5)+1.0)**(-2))
-                        mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=4 else (1/2**2)*np.eye(2)
+                        # mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev #if t <=12 else (1/2**2)*np.eye(2)
+                        mm_Qs[i][n][t]  = Rtv.T@Rev
                         
         for i in ped_list:
             modes=list(set(self.modes[self.sources[self.agents[i].cl]])-set([self.agents[i].cl]))[-2:]
@@ -439,10 +451,11 @@ class Simulator():
                         Rtv=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze().T
                         mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T 
                         E, V =np.linalg.eigh(mat)
-                        S=np.diag((E**(-0.5)+1.0)**(-2))
-                        mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=10 else (1/0.1**2)*np.eye(2)
+                        S=np.diag((E**(-0.5)+1.2)**(-2))
+                        # mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=12 else (1/0.1**2)*np.eye(2)
+                        mm_Qs[i][n][t]  = Rtv.T@Rev
 
-        return x, x_glob, dx_glob, mm_o_glob, mm_u_tvs, mm_routes, mm_droutes, mm_Qs 
+        return x, x_glob, dx_glob, mm_o_glob, mm_u_tvs, mm_routes, mm_droutes, mm_Qs, Revs
         
     
     def _make_lanes(self):
@@ -516,7 +529,7 @@ class Simulator():
         
         lefts_x=[]        
         # 3 : W->N
-        thet=np.linspace(0,np.pi/2)
+        thet=np.linspace(0,np.pi/2, 100)
 
         x_f= lambda t :  8.5 + 15*np.sin(t)
         y_f= lambda t :  15 - 15*np.cos(t)
@@ -663,7 +676,7 @@ class Simulator():
             v_pos=v.traj_glob[:,i]
    
             if v.role!="ped":
-                v_shapes.append(Rectangle((0.-.3,0.-1.8),6.,3.6,linewidth=1., ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))
+                v_shapes.append(Rectangle((0.-2.8,0.-1.5),5.6,3.,linewidth=1., ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))
             else:
                 
                 v_shapes.append(Rectangle((0.-.5,0.-.5),1.,1.,linewidth=1., ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))

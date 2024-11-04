@@ -334,38 +334,132 @@ def get_obstacle_coordinates(occupancy_grid, current_position):
     
     return obstacle_centers
 
+# def summarize_algorithm_comparison_results(folder_path):
+#     results = {}
+#     for subfolder in os.listdir(folder_path):
+#         if os.path.isdir(os.path.join(folder_path, subfolder)):
+#             parts = subfolder.split('_')
+#             try:
+#                 algorithm = parts[0]
+#                 noise_level = parts[2]
+#                 # branch_time = parts[4]
+#             except:
+#                 import pdb; pdb.set_trace()
+#             # algorithm = parts[0]
+#             # noise_level = parts[2]
+
+#             infeasible_count = 0
+#             num_timesteps = 0
+#             avg_comp_time = 0
+#             max_comp_time = 0
+#             control_mag_avg = 0
+#             num_trials = 0
+            
+
+#             for file in os.listdir(os.path.join(folder_path, subfolder)):
+#                 if file.endswith('.pkl'):
+#                     with open(os.path.join(folder_path, subfolder, file), 'rb') as f:
+#                         data = pickle.load(f)
+#                         num_timesteps += data['num_timesteps']
+#                         infeasible_count += data['infeasible_count']
+#                         avg_comp_time += np.mean(data['avg_comp_time'])
+#                         max_comp_time += np.mean(data['max_comp_time'])
+#                         # control_mag_avg += np.linalg.norm(data['control_cache'][0][1])
+#                         num_trials += 1
+
+#             # Calculate averages and ratios
+#             infeasible_ratio = infeasible_count / num_timesteps 
+#             task_completion_time = (num_timesteps / num_trials) * 0.2
+#             avg_comp_time = avg_comp_time / num_trials
+#             max_comp_time = max_comp_time / num_trials
+#             # control_mag_avg = control_mag_avg / num_trials
+
+#             # Initialize dictionary structure if needed
+#             if noise_level not in results:
+#                 results[noise_level] = {}
+#             if algorithm not in results[noise_level]:
+#                 results[noise_level][algorithm] = {}
+
+#             # Store metrics in the dictionary
+#             results[noise_level][algorithm]['infeasible_ratio'] = infeasible_ratio
+#             results[noise_level][algorithm]['task_completion_time'] = task_completion_time
+#             results[noise_level][algorithm]['avg_comp_time'] = avg_comp_time
+#             results[noise_level][algorithm]['max_comp_time'] = max_comp_time
+#             # results[noise_level][algorithm]['control_mag_avg'] = control_mag_avg
+
+#     return results
+
 def summarize_algorithm_comparison_results(folder_path):
     results = {}
+    fallback_values = {
+        'infeasibility_ratio': 1,
+        'task_completion_time': 20,
+        'avg_comp_time': 10,
+        'max_comp_time': 10
+    }
+    
     for subfolder in os.listdir(folder_path):
         if os.path.isdir(os.path.join(folder_path, subfolder)):
             parts = subfolder.split('_')
-            algorithm = parts[0]
-            noise_level = parts[2]
+            try:
+                algorithm = parts[0]
+                noise_level = parts[2]
+            except:
+                import pdb; pdb.set_trace()
 
             infeasible_count = 0
             num_timesteps = 0
             avg_comp_time = 0
             max_comp_time = 0
-            control_mag_avg = 0
             num_trials = 0
+            unsuccessful_trials = 0
+            success_rate = 0
+
+            # Initialize max values for the current algorithm and noise level
+            max_infeasible_count = 0
+            max_avg_comp_time = 0
+            max_max_comp_time = 0
 
             for file in os.listdir(os.path.join(folder_path, subfolder)):
                 if file.endswith('.pkl'):
                     with open(os.path.join(folder_path, subfolder, file), 'rb') as f:
                         data = pickle.load(f)
+                        
+                        # if not data.get('success', True):
+                        #     # Increment unsuccessful trials count
+                        #     unsuccessful_trials += 1
+                        # else:
+                        # Process normally if success is True
                         num_timesteps += data['num_timesteps']
                         infeasible_count += data['infeasible_count']
                         avg_comp_time += np.mean(data['avg_comp_time'])
                         max_comp_time += np.mean(data['max_comp_time'])
-                        control_mag_avg += np.linalg.norm(data['control_cache'][0][1])
                         num_trials += 1
 
+                        # # Update the maximum values seen so far
+                        # max_infeasible_count = max(max_infeasible_count, data['infeasible_count'])
+                        # max_avg_comp_time = max(max_avg_comp_time, np.mean(data['avg_comp_time']))
+                        # max_max_comp_time = max(max_max_comp_time, np.mean(data['max_comp_time']))
+
+            # # If there are unsuccessful trials, add the max values for each unsuccessful trial
+            # infeasible_count += unsuccessful_trials * max_infeasible_count
+            # avg_comp_time += unsuccessful_trials * max_avg_comp_time
+            # max_comp_time += unsuccessful_trials * max_max_comp_time
+            # num_trials += unsuccessful_trials  # Account for unsuccessful trials in the total trial count
+            
             # Calculate averages and ratios
-            infeasible_ratio = infeasible_count / num_timesteps 
-            task_completion_time = (num_timesteps / num_trials) * 0.2
+            # if num_trials > 0:
+            infeasible_ratio = infeasible_count / num_timesteps if num_timesteps > 0 else fallback_values['infeasibility_ratio']
+            task_completion_time = (num_timesteps / num_trials) * 0.2 if num_timesteps > 0 else fallback_values['task_completion_time']
             avg_comp_time = avg_comp_time / num_trials
             max_comp_time = max_comp_time / num_trials
-            control_mag_avg = control_mag_avg / num_trials
+                # import pdb; pdb.set_trace()
+            # else:
+            #     # If all trials were unsuccessful, use the fallback values
+            #     infeasible_ratio = fallback_values['infeasibility_ratio']
+            #     task_completion_time = fallback_values['task_completion_time']
+            #     avg_comp_time = fallback_values['avg_comp_time']
+            #     max_comp_time = fallback_values['max_comp_time']
 
             # Initialize dictionary structure if needed
             if noise_level not in results:
@@ -378,18 +472,21 @@ def summarize_algorithm_comparison_results(folder_path):
             results[noise_level][algorithm]['task_completion_time'] = task_completion_time
             results[noise_level][algorithm]['avg_comp_time'] = avg_comp_time
             results[noise_level][algorithm]['max_comp_time'] = max_comp_time
-            results[noise_level][algorithm]['control_mag_avg'] = control_mag_avg
 
     return results
+
 
 def summarize_ablation_comparison_results(folder_path):
     results = {}
     for subfolder in os.listdir(folder_path):
         if os.path.isdir(os.path.join(folder_path, subfolder)):
             parts = subfolder.split('_')
-            algorithm = parts[0]
-            noise_level = parts[2]
-            branch_time = parts[4]
+            try:
+                algorithm = parts[0]
+                noise_level = parts[2]
+                branch_time = parts[4]
+            except:
+                import pdb; pdb.set_trace()
 
             infeasible_count = 0
             num_timesteps = 0
@@ -492,7 +589,9 @@ def plot_algorithm_comparison_results(results):
         plt.legend()
 
         plt.tight_layout()
-        plt.show()
+        # plt.show()
+        plt.savefig(f'./{data_type}.png')
+        
 
 def plot_ablation_comparison_results(results):
     metrics = ['infeasible_ratio', 'avg_comp_time', 'max_comp_time', 'control_mag_avg']

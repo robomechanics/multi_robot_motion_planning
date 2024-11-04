@@ -1,43 +1,32 @@
 from intersection_sim import Simulator
 from pedestrian_agent import Agent
+from intersection_sim import Simulator
+from pedestrian_agent import Agent
 from mm_mpc_inter import MM_MPC_TI
 from uncontrolled_agent import UncontrolledAgent
 
+from utils import *
+from path_planner import calc_spline_course
+
 import numpy as np
 
-
-
-ev_noise_std=[0.001,0.01]
-ev=Agent(role='EV', cl=3, noise_std=ev_noise_std)
-tv_noise_std=[0.01, 0.1]
-agents=[Agent(role='TV', cl=2, state=np.array([0, 7.]), noise_std=tv_noise_std) for i in range(1)]
-agents.append(Agent(role='ped', cl=7, state=np.array([0., 4.]), noise_std=tv_noise_std, s_dec = 20))
-agents.append(Agent(role='ped', cl=9, state=np.array([0., 2.]), noise_std=tv_noise_std, s_dec = 10))
-
-tv_n_stds=[v.noise_std for v in agents]
-agents.append(ev)
-Sim=Simulator(agents)
-
-
-
-Sim.set_MPC_N(10)
 
 initial_states = [[0.0, 2.0]]
 final_states = [[100.0, 4.0]]
 
 cost_func_params = {
     'Q': np.array([[7.0, 0.0, 0.0], [0.0, 7.0, 0.0], [0.0, 0.0, 2.5]]),
-    'R': np.array([[5.5, 0.0], [0.0, .5]]),
+    'R': np.array([[.75, 0.0], [0.0, .5]]),
     'P': np.array([[12.5, 0.0], [0.0, 12.5]]),
     'Qc': 8,
     'kappa': 3 
 }
 mpc_params = {
     'num_agents': 1,
-    'dt': 0.1,
+    'dt': 0.2,
     'N' : 10,
     'rob_dia': 0.3,
-    'v_lim': 10.0,
+    'v_lim': 8.0,
     'omega_lim': 1.0,
     'total_sim_timestep': 200,
     'obs_sim_timestep': 100,
@@ -45,7 +34,7 @@ mpc_params = {
     'epsilon_r': 0.05,
     'safety_margin': 0.05,
     'goal_tolerence': 0.2, 
-    'linearized_ca': True
+    'linearized_ca': False
 }
 
 obs_traj = []
@@ -53,20 +42,50 @@ static_obs = []
 
 obs = {"static": static_obs, "dynamic": obs_traj}
 
-num_trials = 1
-algs = ["MPC"]
-vel_var_levels = [0.05, 0.4]
-rationality = 0.5
-T = 6
-y_pos = 3
 
-scenario = "test"
-trial = 1
-uncontrolled_fleet = UncontrolledAgent(init_state=[(0, 0, -np.pi/2)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=0.1)
-uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
+num_trials = 5
+algs = ["MM-MPC", "Branch-MPC", "Robust-MPC"]
+# algs = ["MM-MPC"]
+branch_times = [2]#, 4, 8, 12]
+noise_levels = [0.01, 0.05, 0.1]
+make_plots = True
+if make_plots:
+    results = summarize_algorithm_comparison_results("mm_results")
+    plot_algorithm_comparison_results(results)
+    # "pass"
+else:
+    for noise_level in noise_levels:
+        for bt in branch_times:
+            for trial in range(num_trials):
+                uncontrolled_fleet = UncontrolledAgent(init_state=[(0, 0, -np.pi/2)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=0.2)
+                uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
+                for alg in algs:
+                    ev_noise_std=[0.00001,0.00001]
+                    ev=Agent(role='EV', cl=3, state=np.array([25, 6.5 + random.uniform(-0.5,0.5)]), noise_std=ev_noise_std)
+                    tv_noise_std=[noise_level]*2
+                    agents=[Agent(role='TV', cl=4, state=np.array([20, 2]), noise_std=tv_noise_std) for i in range(1)]
+                    agents.append(Agent(role='ped', cl=7, state=np.array([0., 4.5+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 8+random.uniform(-0.5,0.5)))
+                    # agents.append(Agent(role='ped', cl=9, state=np.array([0., 2.+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 12+random.uniform(-0.5,0.5)))
 
-mpc = MM_MPC_TI(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=True, robust_horizon=2, ref=None)
-# mpc = MM_MPC_TI(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj)
-mpc.simulate(Sim)
+                    tv_n_stds=[v.noise_std for v in agents]
+                    agents.append(ev)
+                    Sim=Simulator(agents, T_FINAL=120)
+                    
+                    Sim.set_MPC_N(10)
+                    scenario = alg + "_" + "n_" + str(noise_level) + "_b_" + str(bt)+'_v2'
+                    
 
+                    if alg == "MM-MPC":
 
+                        mpc = MM_MPC_TI(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=True, robust_horizon=bt, ref=None)
+                        # mpc = MM_MPC_TI(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj)
+                        
+                    elif alg == "Branch-MPC":
+                        mpc = MM_MPC_TI(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=False, robust_horizon=bt, ref=None)
+                    else:
+                        mpc = MM_MPC_TI(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=False, robust_horizon=Sim.N, ref=None)
+                        
+                        
+                    mpc.simulate(Sim)
+                    
+                    print(f"Finished algorithm {alg}, trial {trial}, noise level {noise_level}")

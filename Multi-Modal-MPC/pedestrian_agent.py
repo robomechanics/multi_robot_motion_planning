@@ -94,9 +94,9 @@ class Agent():
         self.A=np.array([[1., self.dt], [0., 1.]])
         self.B=np.array([0.5*self.dt**2,self.dt])
         if self.role!="ped":
-            self.veh_dims= np.array([2.9, 1.7])
+            self.veh_dims= np.array([2.8, 1.5])
         else:
-            self.veh_dims= np.array([0.5, 0.5])
+            self.veh_dims= np.array([0.2, 0.2])
             self.s_decision = s_dec
         self.S=np.diag(self.veh_dims**(-1.0))
         self.vB=pc.box2poly([[-self.veh_dims[0], self.veh_dims[0]],[-self.veh_dims[1],self.veh_dims[1]]])
@@ -272,17 +272,17 @@ class PedestrianSimulator:
 
         return self.predictions, self.state_cache
 
-# Simulation parameters
-T = 6 
-dt = 0.1
-rationality = 0.8
-N = 20
-y_pos = 3
-vel_variance = 0.01
+# # Simulation parameters
+# T = 6 
+# dt = 0.1
+# rationality = 0.8
+# N = 20
+# y_pos = 3
+# vel_variance = 0.01
 
-# Create an instance of the simulator
-uncontrolled_agent = PedestrianSimulator(initial_position=0, initial_velocity=0.1, rationality=rationality, sim_time=T, dt=dt, N=N, y_pos=y_pos, vel_variance=vel_variance)
-predictions, state_cache = uncontrolled_agent.simulate_pedestrian()
+# # Create an instance of the simulator
+# uncontrolled_agent = PedestrianSimulator(initial_position=0, initial_velocity=0.1, rationality=rationality, sim_time=T, dt=dt, N=N, y_pos=y_pos, vel_variance=vel_variance)
+# predictions, state_cache = uncontrolled_agent.simulate_pedestrian()
 
-vis = Visualizer(x_positions=state_cache, y_value=y_pos, gmm_predictions=predictions)
-vis.animate()
+# vis = Visualizer(x_positions=state_cache, y_value=y_pos, gmm_predictions=predictions)
+# vis.animate()
