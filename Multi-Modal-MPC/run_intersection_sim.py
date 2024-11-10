@@ -46,11 +46,11 @@ obs = {"static": static_obs, "dynamic": obs_traj}
 num_trials = 5
 algs = ["MM-MPC", "Branch-MPC", "Robust-MPC"]
 # algs = ["MM-MPC"]
-branch_times = [2]#, 4, 8, 12]
+branch_times = [2, 4, 8]
 noise_levels = [0.01, 0.05, 0.1]
 make_plots = True
 if make_plots:
-    results = summarize_algorithm_comparison_results("mm_results")
+    results = summarize_algorithm_comparison_results("old_res/10_25_24")
     plot_algorithm_comparison_results(results)
     # "pass"
 else:
@@ -72,7 +72,7 @@ else:
                     Sim=Simulator(agents, T_FINAL=120)
                     
                     Sim.set_MPC_N(10)
-                    scenario = alg + "_" + "n_" + str(noise_level) + "_b_" + str(bt)+'_v2'
+                    scenario = alg + "_" + "n_" + str(noise_level) + "_b_" + str(bt)+'_v3'
                     
 
                     if alg == "MM-MPC":

@@ -94,9 +94,9 @@ class MM_MPC_TI(MPC_Base):
     def run_single_mpc(self, agent_id, update_dict):
         # casadi parameters
         # if self.linearized_ca:
-        opti = ca.Opti('conic')
+        # opti = ca.Opti('conic')
         # else:
-        #     opti = ca.Opti()
+        opti = ca.Opti()
 
         current_state = update_dict['x0']
         current_state_obs_vector = update_dict['o0']
@@ -238,7 +238,7 @@ class MM_MPC_TI(MPC_Base):
                 
                 obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
      
-                total_cost+= ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
+                total_cost+= 10*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
 
                 pol_gains_k.append(K_stack)
         
@@ -369,9 +369,9 @@ class MM_MPC_TI(MPC_Base):
         # # opts_setting = {'ipopt.print_level': 0, 'print_time': 0,}
         opti.minimize(total_cost)
 
-        # opti.solver('ipopt', opts_setting)
+        opti.solver('ipopt', opts_setting)
         # if self.linearized_ca:
-        opti.solver('osqp', {}, {'verbose':False})
+        # opti.solver('osqp', {}, {'verbose':False})
         # else:
         #     opti.solver('ipopt', opts_setting)
             
