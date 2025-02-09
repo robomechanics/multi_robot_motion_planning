@@ -96,7 +96,7 @@ class Agent():
         if self.role!="ped":
             self.veh_dims= np.array([2.8, 1.5])
         else:
-            self.veh_dims= np.array([0.2, 0.2])
+            self.veh_dims= np.array([0.5, 0.5])
             self.s_decision = s_dec
         self.S=np.diag(self.veh_dims**(-1.0))
         self.vB=pc.box2poly([[-self.veh_dims[0], self.veh_dims[0]],[-self.veh_dims[1],self.veh_dims[1]]])

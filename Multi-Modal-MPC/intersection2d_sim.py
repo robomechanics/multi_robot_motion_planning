@@ -218,8 +218,8 @@ class Simulator():
     def _check_collision(self):
         ev_S=Polytope(self.ev.vB.A, self.ev.vB.b)
         psi=self.routes[self.ev.cl](self.ev.traj[0,self.ev.t])[-1]
-        Rev=np.array([[np.cos(psi), -np.sin(psi)],[np.sin(psi), np.cos(psi)]]).squeeze()
-        ev_S=Rev*ev_S+self.routes[self.ev.cl](self.ev.traj[0,self.ev.t])[:2]
+        Rev=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze()
+        ev_S=Rev*ev_S+self.ev.traj2d_glob[:2,self.ev.t]
         ev_S=pc.Polytope(ev_S.A, ev_S.b)
         for i, v in enumerate(self.tvs):
             tv_S=Polytope(v.vB.A, v.vB.b)
@@ -267,7 +267,7 @@ class Simulator():
                             v.cl = random.choice([8,9])
 
         self.ev.traj_glob[:,self.ev.t]=np.array(self.routes[self.ev.cl](self.ev.traj[0,self.ev.t])[:3]).squeeze()
-        x_dev, y_dev, psi_dev  = self.get_deviation(self.ev.traj[0,self.ev.t], self.ev_traj2d[-1, self.t], self.ev.u2d[-1, self.t])
+        x_dev, y_dev, psi_dev  = self.get_deviation(self.ev.traj[0,self.ev.t], self.ev.traj2d[-1, self.t], self.ev.u2d[-1, self.t])
        
         self.ev.traj2d_glob[:, self.t] = self.ev.traj_glob[:, self.t] + np.array([x_dev, y_dev, psi_dev]).squeeze()
             
@@ -344,14 +344,17 @@ class Simulator():
                 control = np.array([a, theta])
                 
             else:
+                
                 control =u_opt[:,t].squeeze()
 
+            
             x[:,t+1]=self.ev.get_next2d(x[:,t], control)
             x_dev, y_dev, psi_dev = self.get_deviation(x[0,t+1], x[-1,t+1], control[-1])
-            x_glob[:,t+1]=self.routes[self.ev.cl](x[0,t+1])[:2]+np.array([x_dev, y_dev])
+         
+            x_glob[:,t+1:t+2]=self.routes[self.ev.cl](x[0,t+1])[:2]+ca.DM([x_dev, y_dev])
             
             psi= self.routes[self.ev.cl](x[0,t+1])[2]
-            dx_glob[t]=ca.vertcat(self.droutes[self.ev.cl](x[0,t+1])[:2], ca.DM([-np.sin(psi), np.cos(psi)]))
+            dx_glob[t]=ca.horzcat(self.droutes[self.ev.cl](x[0,t+1])[:2], ca.DM([-np.sin(psi), np.cos(psi)]))
             
             Rev=np.array([[np.cos(psi+psi_dev), np.sin(psi+psi_dev)],[-np.sin(psi+psi_dev), np.cos(psi+psi_dev)]]).squeeze().T
             
@@ -690,7 +693,8 @@ class Simulator():
 
         for k, v in enumerate(self.agents):
             
-            v_pos=v.traj_glob[:,i]
+            
+            v_pos=v.traj_glob[:,i] if v.role!="EV" else v.traj2d_glob[:,i]
    
             if v.role!="ped":
                 v_shapes.append(Rectangle((0.-2.8,0.-1.5),5.6,3.,linewidth=1., ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))

@@ -7,6 +7,7 @@ from utils import *
 import scipy.special as sp
 from scipy.stats import multivariate_normal
 import pdb
+from functools import reduce
 
 class MM_MPC_TI(MPC_Base):            
     def _get_robot_ATV_dynamics(self, x_lin):
@@ -37,7 +38,7 @@ class MM_MPC_TI(MPC_Base):
             A_pred[t*3:(t+1)*3,:]=A@A_pred[(t-1)*3:t*3,:]
             
             B_pred[t*3:(t+1)*3,:]=A@B_pred[(t-1)*3:t*3,:]
-            B_pred[t*3:(t+1)*3,t-1]=B
+            B_pred[t*3:(t+1)*3,2*(t-1):2*t]=B
             
             E_pred[t*3:(t+1)*3,:]=A@E_pred[(t-1)*3:t*3,:]
             E_pred[t*3:(t+1)*3,(t-1)*3:t*3]=E
@@ -117,10 +118,11 @@ class MM_MPC_TI(MPC_Base):
 
        
         def _get_mm_bias(j):
-            return ca.sum2(ca.horzcat(*[opt_bias_mm[k][mode_map((j,k))] for k in range(n_obs)]))
+            return reduce(lambda x,y : x+y, [opt_bias_mm[k][mode_map((j,k))] for k in range(n_obs)])
             
         rob_u = opti.variable(self.N, 2)
         opt_bias_mm  = [[opti.variable(self.N-self.robust_horizon,2) for _ in range(self.num_modes)] for _ in range(n_obs)]
+   
         opt_controls = [rob_u+ca.vertcat(ca.DM(self.robust_horizon,2), _get_mm_bias(j)) for j in range(self.num_modes**n_obs)]
         # opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(self.num_modes)]
         obca_lmbd    = [[opti.variable(4,self.N-1) for _ in range(self.num_modes)] for _ in range(n_obs)]  
@@ -139,8 +141,7 @@ class MM_MPC_TI(MPC_Base):
             # import pdb; pdb.set_trace()
             x_pos = update_dict['x_pos']
             d_pos = update_dict['dpos']
-           
-            x_traj = ca.vec(x_pos)+ ca.vertcat(ca.DM(3,1),ca.vec(ca.diagcat(*d_pos)@opt_states[-1][1:,0::2]))
+            x_traj = ca.vec(x_pos)+ ca.vertcat(ca.DM(2,1),ca.vec(ca.diagcat(*d_pos)@ca.vec(opt_states[-1][1:,0::2])))
             opt_x.append(x_traj.reshape((2,-1))[0,:])
             opt_y.append(x_traj.reshape((2,-1))[1,:])
             v.append(opt_states[-1][:,1])
@@ -154,7 +155,7 @@ class MM_MPC_TI(MPC_Base):
         
         # parameters
         # opt_x0 = opti.parameter(3)
-        opt_xs = opti.parameter(2)
+        opt_xs = opti.parameter(3)
         # self.opt_epsilon_r.append(self.opti.variable(self.N+1, 1))
 
         # define the cost function
@@ -282,8 +283,9 @@ class MM_MPC_TI(MPC_Base):
                     
                     Rtv   =  Revs[t]@Qs[k][j][t-1].T
                     A_m_b = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Rtv.T
-                    b_m = ca.DM([obs_dims[k][0]+0.1, obs_dims[k][0]+0.1, obs_dims[k][1]+0.05, obs_dims[k][1]+0.05]) + A_m_b@prediction[:,t]
+                    b_m = ca.DM([obs_dims[k][0]+0.2, obs_dims[k][0]+0.2, obs_dims[k][1]+0.1, obs_dims[k][1]+0.1]) + A_m_b@prediction[:,t]
                     lmbd = obca_lmbd[k][j][:,t-1]
+                    psi = np.arcsin(Revs[t][0,1].squeeze())
                     
                     
                     if type(self.prev_controls[agent_id])==type({}):
@@ -306,9 +308,11 @@ class MM_MPC_TI(MPC_Base):
                         if mode_map((m,k))!=j:
                             continue
                         # else:
+                        ey  = A[3*(t+1)-1,:]@ca.DM(current_state)+B[3*(t+1)-1,:]@ca.vec(opt_controls[m].T)
+                        pos_dev = ca.vertcat(-ey*ca.sin(psi), ey*ca.cos(psi)) 
                         lin_dist = (oa_ref-prediction[:,t]).T
                         # print(f" time:{t} linearized relative displacement:", lin_dist, "ev position proj", oa_ref, "tv position", prediction[:,t])
-                        noise_coeff = ca.horzcat(dpos[t-1].T@(E[3*t:3*(t+1):2,:]),*[dpos[t-1].T@B[3*t:3*(t+1):2,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:3*self.N,:]-int(l==k)*(dpos_tvs[k][j][t-1]@E_obs[k][j][2*t,:]).T for l in range(self.n_obs)])
+                        noise_coeff = ca.horzcat(dpos[t-1]@(E[3*t:3*(t+1):2,:]),*[dpos[t-1]@B[3*t:3*(t+1):2,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*(dpos_tvs[k][j][t-1]@E_obs[k][j][2*t,:]) for l in range(self.n_obs)])
                         # noise_coeff_const = ca.horzcat(dpos[t-1].T@(E[3*t:3*(t+1):2,:]),*[0*dpos[t-1]@B[2*t,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*dpos_tvs[k][j][t-1]@E_obs[k][j][2*t,:] for l in range(self.n_obs)])
                         # rv_dist=sp.erfinv(1-self.delta)*(lin_dist@Qs[k][j][t-1]@noise_coeff)
                     
@@ -344,7 +348,7 @@ class MM_MPC_TI(MPC_Base):
                         # else:
                             
                             
-                        nom_obca = (A_m_b@r_fun(A[3*t,:]@ca.DM(current_state)+B[3*t,:]@opt_controls[m])[:2]-b_m).T@lmbd-3.1
+                        nom_obca = (A_m_b@(r_fun(A[3*t,:]@ca.DM(current_state)+B[3*t,:]@ca.vec(opt_controls[m].T))[:2]+pos_dev)-b_m).T@lmbd-3.1
                         # nom_obca = (A_m@(x_pos[:,t]+dpos[t-1]@(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m]))-b_m).T@lmbd
                         rv_obca  = sp.erfinv(1-self.delta)*(A_m_b@noise_coeff).T@lmbd
                         
@@ -372,7 +376,7 @@ class MM_MPC_TI(MPC_Base):
         # else:
         #     opti.solver('ipopt', opts_setting)
             
-        opti.set_value(opt_xs, self.final_state[agent_id])
+        opti.set_value(opt_xs, ca.vertcat(self.final_state[agent_id],0))
 
         # set optimizing target withe init guess
         if type(self.prev_controls[agent_id])==type({}):
@@ -460,8 +464,10 @@ class MM_MPC_TI(MPC_Base):
             if type(self.prev_controls[0]) ==type({}):
                 u_ws = self.prev_controls[0]['control'][0]
             else:
-                u_ws = self.prev_controls[0]
-            results = [self.run_single_mpc(0, Sim.get_update_dict(u_ws))]
+                
+                # u_ws = self.prev_controls[0,:]
+                u_ws = np.hstack([1*np.ones((self.N, 1)), np.zeros((self.N,1))])
+            results = [self.run_single_mpc(0, Sim.get_update_dict(u_ws.T))]
             
             # results = pool.starmap(self.run_single_mpc, [(agent_id, np.array(self.current_state[agent_id]), []) for agent_id in range(self.num_agent)])
     
@@ -483,23 +489,23 @@ class MM_MPC_TI(MPC_Base):
 
                     self.infeasible_count += 1
                     self.infeasible = True
-                    u = [-5*np.ones((self.N, 1))]
+                    u = [np.hstack([-5*np.np.ones((self.N, 1)), np.zeros((self.N,1))])]
                     current_state = Sim.ev.traj[:,Sim.t]
-                    Sim.step(-5.0)
+                    Sim.step(np.array([-5.0, 0]))
                     next_state = Sim.ev.traj[:,Sim.t]
 
                     self.prediction_cache[agent_id] = next_states_pred
-                    self.control_cache[agent_id].append(u[0][0])
+                    self.control_cache[agent_id].append(u[0][0,:])
                     self.current_state[agent_id] = next_state
                     self.state_cache[agent_id].append(next_state)
                     
                 else:
                     # current_state = np.array(self.current_state[agent_id])
                     # next_state = self.shift_movement(current_state, u[0], self.f_np)
-                    Sim.step(u[0][0])
+                    Sim.step(u[0][0,:])
                     next_state = Sim.ev.traj[:,Sim.t]
                     self.prediction_cache[agent_id] = next_states_pred
-                    self.control_cache[agent_id].append(u[0][0])
+                    self.control_cache[agent_id].append(u[0][0,:])
                     self.current_state[agent_id] = next_state
                     self.state_cache[agent_id].append(next_state)
                     

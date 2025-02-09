@@ -31,6 +31,7 @@ class MPC_Base:
         self.uncontrolled_fleet = uncontrolled_fleet
         self.uncontrolled_fleet_data = uncontrolled_fleet_data
         self.delta = 0.02
+        
         self.num_modes = 3
         self.robust_horizon = robust_horizon
         self.feedback = feedback
