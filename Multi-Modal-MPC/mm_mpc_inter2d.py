@@ -89,7 +89,7 @@ class MM_MPC_TI(MPC_Base):
                 TB_tv[t*2:(t+1)*2,:]=A@TB_tv[(t-1)*2:t*2,:]
                 TB_tv[t*2:(t+1)*2,t-1:t]=B
                 E_tv[t*2:(t+1)*2,:]=A@E_tv[(t-1)*2:t*2,:]    
-                E_tv[t*2:(t+1)*2,(t-1)*2:t*2]=E
+                E_tv[t*2:(t+1)*2,(t-1)*2:t*2]=E**(1-1/2*(1-self.feedback))
 
         c_tv=TB_tv@u_tvs.T             
 
@@ -197,12 +197,12 @@ class MM_MPC_TI(MPC_Base):
             # opti.subject_to(opti.bounded(-1.0, opt_x[j], 1.0))
             # opti.subject_to(opti.bounded(-5, opt_y[j], 5))
             opti.subject_to(opti.bounded(-1, v[j], 7))#self.v_lim))
-            opti.subject_to(opti.bounded(-5, a[j], 2))
+            opti.subject_to(opti.bounded(-2, a[j], 3))
             opti.subject_to(opti.bounded(-3, ey[j], 3))
       
-        opti.subject_to(opti.bounded(0,slack,0.5))
+        opti.subject_to(opti.bounded(0,slack,0.01))
             
-        total_cost = robot_cost + 1000*slack**2
+        total_cost = robot_cost + 100000*slack**2
         
         ##### Get chance constraints from the given GMM prediction
         ## aij = (pi - pj) / ||pi - pj|| and bij = ri + rj 
@@ -260,7 +260,7 @@ class MM_MPC_TI(MPC_Base):
             for j, prediction in enumerate(agent_prediction):
                 # print("Jacobians", "Ev", dpos, "Tv", dpos_tvs[k][j])
                 # print("Positions","TV", prediction,  "EV", x_pos)
-                for t in range(1,self.N,2):
+                for t in range(1,self.N,1):
                     
                     ## Prob(||(tv_pos + tv_noise - opt_state- noise_correction)||_2^2 >= 4*self.rob^2_dia) >= 1-epsilon
                     ## g(o,p) = || o -p |||^2,   l(o,p) = g(o_0, p_0) +  dg_p(p-p_0) + dg_o (o-o_0)
@@ -283,7 +283,7 @@ class MM_MPC_TI(MPC_Base):
                     
                     Rtv   =  Revs[t]@Qs[k][j][t-1].T
                     A_m_b = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Rtv.T
-                    b_m = ca.DM([obs_dims[k][0]+0.2, obs_dims[k][0]+0.2, obs_dims[k][1]+0.1, obs_dims[k][1]+0.1]) + A_m_b@prediction[:,t]
+                    b_m = ca.DM([obs_dims[k][0]+0.75, obs_dims[k][0]+0.75, obs_dims[k][1]+0.5, obs_dims[k][1]+0.5]) + A_m_b@prediction[:,t]
                     lmbd = obca_lmbd[k][j][:,t-1]
                     psi = np.arcsin(Revs[t][0,1].squeeze())
                     
@@ -348,7 +348,7 @@ class MM_MPC_TI(MPC_Base):
                         # else:
                             
                             
-                        nom_obca = (A_m_b@(r_fun(A[3*t,:]@ca.DM(current_state)+B[3*t,:]@ca.vec(opt_controls[m].T))[:2]+pos_dev)-b_m).T@lmbd-3.1
+                        nom_obca = (A_m_b@(r_fun(A[3*t,:]@ca.DM(current_state)+B[3*t,:]@ca.vec(opt_controls[m].T))[:2]+pos_dev)-b_m).T@lmbd-4.5
                         # nom_obca = (A_m@(x_pos[:,t]+dpos[t-1]@(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m]))-b_m).T@lmbd
                         rv_obca  = sp.erfinv(1-self.delta)*(A_m_b@noise_coeff).T@lmbd
                         
@@ -489,9 +489,9 @@ class MM_MPC_TI(MPC_Base):
 
                     self.infeasible_count += 1
                     self.infeasible = True
-                    u = [np.hstack([-5*np.np.ones((self.N, 1)), np.zeros((self.N,1))])]
+                    u = [np.hstack([-2*np.ones((self.N, 1)), np.zeros((self.N,1))])]
                     current_state = Sim.ev.traj[:,Sim.t]
-                    Sim.step(np.array([-5.0, 0]))
+                    Sim.step(np.array([-2.0, 0]))
                     next_state = Sim.ev.traj[:,Sim.t]
 
                     self.prediction_cache[agent_id] = next_states_pred

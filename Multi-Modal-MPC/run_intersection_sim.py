@@ -24,7 +24,7 @@ cost_func_params = {
 mpc_params = {
     'num_agents': 1,
     'dt': 0.25,
-    'N' : 12,
+    'N' : 10,
     'rob_dia': 0.3,
     'v_lim': 8.0,
     'omega_lim': 1.0,
@@ -47,7 +47,7 @@ num_trials = 5
 algs = ["MM-MPC", "Branch-MPC", "Robust-MPC"]
 # algs = ["MM-MPC"]
 branch_times = [2, 4, 8]
-noise_levels = [0.01, 0.05, 0.1]
+noise_levels = [0.1, 0.2, 0.3]
 make_plots = False
 if make_plots:
     results = summarize_algorithm_comparison_results("mm_results")
@@ -61,11 +61,11 @@ else:
                 uncontrolled_fleet = UncontrolledAgent(init_state=[(0, 0, -np.pi/2)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=0.2)
                 uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
                 for alg in algs:
-                    ev_noise_std=[0.00001,0.00001]
-                    ev=Agent2D(role='EV', cl=3, state=np.array([35, 6.5 + random.uniform(-0.5,0.5), 0.
+                    ev_noise_std=[0.01,0.01]
+                    ev=Agent2D(role='EV', cl=3, state=np.array([40, 6.5 + random.uniform(-0.5,0.5), 0.
                                                                 ]), noise_std=ev_noise_std)
                     tv_noise_std=[noise_level]*2
-                    agents=[Agent(role='TV', cl=4, state=np.array([20, 1]), noise_std=tv_noise_std) for i in range(1)]
+                    agents=[Agent(role='TV', cl=4, state=np.array([20, 0.1]), noise_std=tv_noise_std) for i in range(1)]
                     agents.append(Agent(role='ped', cl=7, state=np.array([0., 4.5+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 8+random.uniform(-0.5,0.5)))
                     # agents.append(Agent(role='ped', cl=9, state=np.array([0., 2.+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 12+random.uniform(-0.5,0.5)))
 
@@ -73,7 +73,7 @@ else:
                     agents.append(ev)
                     Sim=Simulator(agents, T_FINAL=120)
                     
-                    Sim.set_MPC_N(12)
+                    Sim.set_MPC_N(10)
                     scenario = alg + "_" + "n_" + str(noise_level) + "_b_" + str(bt)+'_v3'
                     
 
