@@ -107,11 +107,6 @@ class MM_MPC(MPC_Base):
         # casadi parameters
         opti = ca.Opti('conic')
 
-        # current_state_obs_vector = [self.uncontrolled_fleet_data[obs]['executed_traj'][self.num_timestep] for obs in range(len(self.uncontrolled_fleet_data))]
-        # gmm_predictions_vector = self.uncontrolled_fleet.get_gmm_predictions_from_current(current_state_obs_vector)
-        # noise_chars = self.uncontrolled_fleet.get_gmm_predictions()
-        # mode_prob = self.uncontrolled_fleet_data[0]['mode_probabilities'][self.num_timestep]
-
         filtered_predictions_vector = []
         filtered_noise_chars = []
 
@@ -187,10 +182,8 @@ class MM_MPC(MPC_Base):
             for k in range(self.N):
                 mode_weight = 1
                 if not self.mle:
-                    mode_weight = self.mode_prob[j]
-                # if k > self.robust_horizon:
-                # robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]-opt_xs.T), Q, (opt_states[j][k, :]-opt_xs.T).T] 
-                #             )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) + 100000 * opt_epsilon_r[j][k]) #+ 100000 * opt_epsilon_o[k]
+                    mode_weight = self.mode_prob[0][j]
+             
                 robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]-opt_xs.T), Q, (opt_states[j][k, :]-opt_xs.T).T] 
                     )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T])) #+ 100000 * opt_epsilon_r[j][k]) 
                 # else:
@@ -207,7 +200,7 @@ class MM_MPC(MPC_Base):
                 #     opti.subject_to(rob_obs_constraints_ >= 0)
             
             # boundrary and control conditions
-            opti.subject_to(opti.bounded(-0.5, opt_x[j], 0.5))
+            # opti.subject_to(opti.bounded(-0.5, opt_x[j], 0.5))
             opti.subject_to(opti.bounded(-5, opt_y[j], 5))
             opti.subject_to(opti.bounded(-self.v_lim, v[j], self.v_lim))
             opti.subject_to(opti.bounded(-self.omega_lim, omega[j], self.omega_lim))
@@ -245,7 +238,7 @@ class MM_MPC(MPC_Base):
 
                 obs_xy_cov = ca.diagcat(*[ covariances[i][:2,:2] for i in range(self.N)])
      
-                total_cost+= 3*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
+                total_cost+= 5*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
 
                 pol_gains_k.append(K_stack)
         
@@ -388,12 +381,18 @@ class MM_MPC(MPC_Base):
             time_1 = time.time()
             print(self.num_timestep)
 
-            uncontrolled_traj = [self.uncontrolled_fleet_data[obs_idx]['executed_traj'] for obs_idx in range(self.n_obs)]
-            self.current_uncontrolled_state = [uncontrolled_traj[obs_idx][self.num_timestep] for obs_idx in range(self.n_obs)]
-            self.gmm_predictions = self.uncontrolled_fleet.get_gmm_predictions_from_current(self.current_uncontrolled_state)
-            self.noise_chars = self.uncontrolled_fleet.get_gmm_predictions()
-            self.mode_prob = [prob for obs_idx in range(self.n_obs) for prob in self.uncontrolled_fleet_data[obs_idx]['mode_probabilities'][self.num_timestep]]
-            
+            for ped in self.ped_manager.pedestrians:
+                ped.update_mode_probabilities(self.prediction_cache[0], d_thresh=1.0, k=10, temperature=0.5)
+
+            self.ped_manager.update_pedestrians()
+    
+            self.current_pedestrian_state = [(ped.position[0], ped.position[1]) for ped in self.ped_manager.pedestrians]
+
+            self.gmm_predictions = self.ped_manager.get_gmm_predictions_from_current()
+            self.noise_chars = self.ped_manager.get_gmm_predictions()
+
+            self.mode_prob = self.ped_manager.get_mode_probabilities()
+
             self.obs_affine_model ={obs_idx: {mode: {'T': None, 'c':None, 'E':None, 'covars':None} for mode in range(len(self.gmm_predictions[obs_idx]))} for obs_idx in range(self.n_obs)}
             self.rob_affine_model ={'A': None, 'B':None, 'C':None, 'E':None}
             for obs_idx, (agent_prediction, agent_noise) in enumerate(zip(self.gmm_predictions, self.noise_chars)):
@@ -417,7 +416,7 @@ class MM_MPC(MPC_Base):
             pool.close()
             pool.join()
 
-            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], self.gmm_predictions, self.mode_prob, ref=self.ref)
+            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], self.gmm_predictions, mode_prob=self.mode_prob, ref=self.ref)
             self.plot_feedback_gains()
 
             # Process the results and update the current state

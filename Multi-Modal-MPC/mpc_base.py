@@ -14,7 +14,7 @@ from matplotlib.patches import Rectangle
 plt.rcParams['figure.dpi'] = 200  # Increase display resolution in the notebook or scripts
 
 class MPC_Base:
-    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=None, ref=None, feedback=None, robust_horizon=None, mle=False):
+    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, ped_manager, map=None, ref=None, feedback=None, robust_horizon=None, mle=False):
         self.num_agent = mpc_params['num_agents']
         self.dt = mpc_params['dt']
         self.N = mpc_params['N']
@@ -34,6 +34,7 @@ class MPC_Base:
         self.trial = trial
         self.uncontrolled_fleet = uncontrolled_fleet
         self.uncontrolled_fleet_data = uncontrolled_fleet_data
+        self.ped_manager = ped_manager
         self.delta = 0.03
         self.num_modes = 2
         self.robust_horizon = robust_horizon
@@ -43,7 +44,7 @@ class MPC_Base:
         self.model = DiffDrive(self.rob_dia)
 
         self.state_cache = {agent_id: [] for agent_id in range(self.num_agent)}
-        self.prediction_cache = {agent_id: np.empty((3, self.N+1)) for agent_id in range(self.num_agent)}
+        self.prediction_cache = {agent_id: np.zeros((3, self.N+1)) for agent_id in range(self.num_agent)}
         self.control_cache = {agent_id: [] for agent_id in range(self.num_agent)}
 
         # variables holding previous solutions
@@ -59,7 +60,7 @@ class MPC_Base:
         for i in range(self.num_agent):
             self.current_state[i] = self.initial_state[i]
 
-        self.n_obs=len(self.uncontrolled_fleet_data)
+        self.n_obs=self.ped_manager.num_pedestrians
         self.main_frame_counter = 0
         self.fb_frame_counter = 0
         self.frame_limit = 20
@@ -250,7 +251,7 @@ class MPC_Base:
         # Calculate the scaled alpha values
         max_alpha = 0.6
         if mode_prob is not None:
-            scaled_alpha = [prob * max_alpha for prob in mode_prob]
+            scaled_alpha = [prob * max_alpha for prob in mode_prob[0]]
         else:
             scaled_alpha = [max_alpha] * 2  # Default to max alpha if no mode_prob provided
 
@@ -306,21 +307,21 @@ class MPC_Base:
         self.ax1.add_patch(arrow)
 
         # Plotting the mode probabilities as a bar chart
-        # if mode_prob is not None:
-        #     modes = range(len(mode_prob))
-        #     mode_labels = [f"Mode {i+1}" for i in modes]  # Create labels for each mode
-        #     bar_colors = [colors(i) for i in modes]  # Use the same color scheme as for the circles
-        #     bars = self.ax_prob.bar(modes, mode_prob, color=bar_colors, alpha=0.6)
-        #     self.ax_prob.set_ylim(0, 1)
-        #     self.ax_prob.set_ylabel('Mode Probabilities')
-        #     self.ax_prob.set_xticks(modes)  # Set the x-ticks to be at the modes
-        #     self.ax_prob.set_xticklabels(mode_labels)  # Label the x-ticks
+        if mode_prob is not None:
+            modes = range(len(mode_prob[0]))
+            mode_labels = [f"Mode {i+1}" for i in modes]  # Create labels for each mode
+            bar_colors = [colors[i] for i in modes]  # Correctly index the list
+            bars = self.ax_prob.bar(modes, mode_prob[0], color=bar_colors, alpha=0.6)
+            self.ax_prob.set_ylim(0, 1)
+            self.ax_prob.set_ylabel('Mode Probabilities')
+            self.ax_prob.set_xticks(modes)  # Set the x-ticks to be at the modes
+            self.ax_prob.set_xticklabels(mode_labels)  # Label the x-ticks
 
         plt.draw()
 
         if self.main_frame_counter < self.frame_limit:
             frame_filename = f'frame_{self.main_frame_counter}.png'  # Define the file name
-            self.fig1.savefig(frame_filename)  # Save the figure
+            # self.fig1.savefig(frame_filename)  # Save the figure
             self.main_frame_counter += 1  # Increment the frame counter
         plt.pause(0.1)
 
@@ -402,9 +403,10 @@ class MPC_Base:
         plt.pause(0.01)
 
     def get_robot_feedback_policy(self):
-        N_samples = 20
+        N_samples = 10
         N_t = multivariate_normal.rvs(np.zeros(self.N), np.eye(self.N), N_samples)
-        current_state_obs = self.current_uncontrolled_state[0]
+        # current_state_obs = self.current_uncontrolled_state[0]
+        current_state_obs = self.current_pedestrian_state[0]
 
         # Initialize the data structure
         trajectories = {}
@@ -430,39 +432,6 @@ class MPC_Base:
 
             # Store the samples for this mode
             trajectories[mode] = {'obs': obs_samples, 'rob': rob_samples}
-
-        # plt.figure(figsize=(12, 9))
-
-        # # Define some colors to differentiate between modes
-        # colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
-
-        # for mode in trajectories.keys():
-        #     # Extract obstacle and robot samples
-        #     obs_samples = trajectories[mode]['obs']
-        #     rob_samples = trajectories[mode]['rob']
-
-        #     # Select color for current mode
-        #     color = colors[mode % len(colors)]
-
-        #     # Plot the trajectories
-        #     # For each sample in the mode, extract the positions and plot them
-        #     for obs, rob in zip(obs_samples, rob_samples):
-        #         # Reshape the sample arrays to have pairs of (x, y) positions
-        #         obs_xy = np.ravel(obs).reshape(-1, 2)  # Reshape to (-1, 2) where -1 infers the correct length
-        #         rob_xy = np.ravel(rob).reshape(-1, 2)
-
-        #         # Plot obstacles trajectory for this sample
-        #         plt.plot(obs_xy[:, 0], obs_xy[:, 1], color=color, alpha=0.5, label=f'Obstacles Mode {mode}' if obs is obs_samples[0] else "")
-
-        #         # Plot robot trajectory for this sample
-        #         plt.scatter(rob_xy[:, 0], rob_xy[:, 1], color=color, alpha=0.75, label=f'Robot Mode {mode}' if rob is rob_samples[0] else "")
-
-        # # Add plot legend, labels, and title
-        # plt.legend()
-        # plt.title('Trajectories of Obstacles and Robot Across All Modes')
-        # plt.xlabel('X Position')
-        # plt.ylabel('Y Position')
-        # plt.show()
     
         return trajectories
 

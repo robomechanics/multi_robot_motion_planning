@@ -442,7 +442,7 @@ class MM_CBS(MPC_Base):
             next_states_pred = [[ca.DM(current_state).T] for j in range(1)]
 
             for j in range(1):
-                import pdb; pdb.set_trace()
+                # import pdb; pdb.set_trace()
                 for t in range(u_res[0].shape[0]):
                     next_states_pred[j].append(self.model.fCd(next_states_pred[j][-1], u_res[j][t,:]).T)
                 next_states_pred[j] = ca.vertcat(*next_states_pred[j])
@@ -575,8 +575,7 @@ class MM_CBS(MPC_Base):
                     self.success = True
                     
                     return node.mm_sol
-
-                
+   
                 self.success = False
                 
                 agent_id, mode, obstacle =  conflicts[-1]
