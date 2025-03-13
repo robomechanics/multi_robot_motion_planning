@@ -180,7 +180,7 @@ class Agent2D():
         self.traj[:,0]=state[:2]
         self.traj2d[:,0] = state
         self.t=0
-        v_sched = lambda v_x : 0.5 if v_x < 2 else 4
+        v_sched = lambda v_x : 0.2 if v_x < 2 else 2.5
             
         self.A=np.array([[1., self.dt], [0., 1.]])
         self.B=np.array([0.5*self.dt**2,self.dt])
@@ -191,7 +191,7 @@ class Agent2D():
         if self.role!="ped":
             self.veh_dims= np.array([2.8, 1.5])
         else:
-            self.veh_dims= np.array([0.2, 0.2])
+            self.veh_dims= np.array([0.3, 0.3])
             self.s_decision = s_dec
         self.S=np.diag(self.veh_dims**(-1.0))
         self.vB=pc.box2poly([[-self.veh_dims[0], self.veh_dims[0]],[-self.veh_dims[1],self.veh_dims[1]]])

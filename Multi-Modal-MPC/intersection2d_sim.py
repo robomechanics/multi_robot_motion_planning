@@ -674,8 +674,8 @@ class Simulator():
 
 
         #Map Boundaries and roads
-        ax.add_patch(Rectangle((-50, -7.5),110,30,linewidth=1,edgecolor='darkgrey', fc='darkgrey',fill=True, alpha=0.7))
-        ax.add_patch(Rectangle((1, -7.5),30,47.5,linewidth=1,edgecolor='darkgrey', fc='darkgrey',fill=True, alpha=0.7))
+        ax.add_patch(Rectangle((-50, -7.5),110,30,linewidth=1,edgecolor='darkgrey', fc='darkgrey',fill=True, alpha=0.5))
+        ax.add_patch(Rectangle((1, -7.5),30,47.5,linewidth=1,edgecolor='darkgrey', fc='darkgrey',fill=True, alpha=0.5))
         ax.plot([-50, 1], [22.5, 22.5], color='k', lw=2)
         ax.plot([-50, 60], [-7.5, -7.5], color='k', lw=2)
         ax.plot([31, 60], [22.5, 22.5], color='k', lw=2)
@@ -697,13 +697,28 @@ class Simulator():
             v_pos=v.traj_glob[:,i] if v.role!="EV" else v.traj2d_glob[:,i]
    
             if v.role!="ped":
-                v_shapes.append(Rectangle((0.-2.8,0.-1.5),5.6,3.,linewidth=1., ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))
+                v_shapes.append(Rectangle((0.-2.7,0.-1.4),5.4,2.8,linewidth=1., ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))
             else:
                 
-                v_shapes.append(Rectangle((0.-.5,0.-.5),1.,1.,linewidth=1., ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))
+                v_shapes.append(Rectangle((0.-.4,0.-.4),.8,.8,linewidth=1., ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))
                 
             v_shapes[-1].set_transform(_tf(v_pos)+ax.transData)
             ax.add_patch(v_shapes[-1])
+            
+        
+        if self.viz_preds:
+            #Ego predictions
+            ax.plot(np.array(self.ev_sols[i][0,1:]).squeeze(), np.clip(np.array(self.ev_sols[i][1,1:]).squeeze(),-8,52), color="g", lw = 2, alpha=0.8 )
+
+        for k, v in enumerate(self.agents):
+            if v.role not in ["dummy", "ev"]:
+                if self.viz_preds and k in self.tv_idxs:
+                    tv_mm_preds=self.mm_preds[i][k]
+                    colors = ['orange', 'red', 'yellow']
+                    for m, pred in enumerate(tv_mm_preds):
+                        #TV predictions 
+                       
+                        ax.scatter(np.array(pred[0,:]).squeeze(), np.clip(np.array(pred[1,:]).squeeze(),-8,52), color=colors[m], alpha=0.7,edgecolors='k',linewidths=1.5)
 
                 
 

@@ -21,7 +21,7 @@ class MM_MPC_TI(MPC_Base):
         x_{i|t}= state prediction of kth vehicle at time step i, given current time t
         """ 
         
-        v_sched = lambda v_x : 0.5 if v_x < 2 else 4
+        v_sched = lambda v_x : 0.2 if v_x < 2 else 2.5
   
 
         E = 0.001*ca.DM.eye(3)
@@ -176,7 +176,7 @@ class MM_MPC_TI(MPC_Base):
                 # if k > self.robust_horizon:
                 # robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]-opt_xs.T), Q, (opt_states[j][k, :]-opt_xs.T).T] 
                 #             )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) + 100000 * opt_epsilon_r[j][k]) #+ 100000 * opt_epsilon_o[k]
-                robot_cost = robot_cost + mode_weight*(-0.1*opt_states[j][k,0]
+                robot_cost = robot_cost + mode_weight*(-4.*opt_states[j][k,0]
                     + 0.1*ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) ) #+ 100000 * opt_epsilon_r[j][k]) 
                 if k>0:
                     robot_cost+= 10*mode_weight*(opt_controls[j][k-1,:]-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
@@ -197,8 +197,8 @@ class MM_MPC_TI(MPC_Base):
             # opti.subject_to(opti.bounded(-1.0, opt_x[j], 1.0))
             # opti.subject_to(opti.bounded(-5, opt_y[j], 5))
             opti.subject_to(opti.bounded(-1, v[j], 7))#self.v_lim))
-            opti.subject_to(opti.bounded(-2, a[j], 3))
-            opti.subject_to(opti.bounded(-3, ey[j], 3))
+            opti.subject_to(opti.bounded(-3, a[j], 3))
+            opti.subject_to(opti.bounded(-2.5, ey[j], 2.5))
       
         opti.subject_to(opti.bounded(0,slack,0.01))
             
