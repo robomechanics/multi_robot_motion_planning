@@ -381,7 +381,7 @@ class Simulator():
                 E, V =np.linalg.eigh(mat)
                 S=np.diag((E**(-0.5)+1.0)**(-2))
                 Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=12 else (1/2**2)*np.eye(2)
-                Qs[i][t]  = Rtv.T@Rev
+                # Qs[i][t]  = Rtv.T@Rev
                 
             for i in ped_list:
                 v_des = self.routes[self.agents[i].cl](0.+o[i][0,t+1])[3]
@@ -396,8 +396,8 @@ class Simulator():
                 mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T
                 E, V =np.linalg.eigh(mat)
                 S=np.diag((E**(-0.5)+1.2)**(-2))
-                # Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev #if t <=12 else (1/0.1**2)*np.eye(2)
-                Qs[i][t]  = Rtv.T@Rev
+                Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev #if t <=12 else (1/0.1**2)*np.eye(2)
+                # Qs[i][t]  = Rtv.T@Rev
                 
         mm_o      = [[copy.deepcopy(o[i]) for _ in range(self.n_modes[i])] for i,v in enumerate(self.agents) if v!=self.ev]
         mm_o_glob = [[copy.deepcopy(o_glob[i]) for _ in range(self.n_modes[i])] for i,v in enumerate(self.agents) if v!=self.ev]
@@ -441,8 +441,8 @@ class Simulator():
                         mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T 
                         E, V =np.linalg.eigh(mat)
                         S=np.diag((E**(-0.5)+1.0)**(-2))
-                        # mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev #if t <=12 else (1/2**2)*np.eye(2)
-                        mm_Qs[i][n][t]  = Rtv.T@Rev
+                        mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev #if t <=12 else (1/2**2)*np.eye(2)
+                        # mm_Qs[i][n][t]  = Rtv.T@Rev
                         
         for i in ped_list:
             modes=list(set(self.modes[self.sources[self.agents[i].cl]])-set([self.agents[i].cl]))[-2:]
@@ -472,8 +472,8 @@ class Simulator():
                         mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T 
                         E, V =np.linalg.eigh(mat)
                         S=np.diag((E**(-0.5)+1.2)**(-2))
-                        # mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=12 else (1/0.1**2)*np.eye(2)
-                        mm_Qs[i][n][t]  = Rtv.T@Rev
+                        mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=12 else (1/0.1**2)*np.eye(2)
+                        # mm_Qs[i][n][t]  = Rtv.T@Rev
 
         return x, x_glob, dx_glob, mm_o_glob, mm_u_tvs, mm_routes, mm_droutes, mm_Qs, Revs
         

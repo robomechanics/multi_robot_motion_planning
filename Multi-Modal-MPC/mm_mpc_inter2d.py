@@ -262,45 +262,26 @@ class MM_MPC_TI(MPC_Base):
                 # print("Positions","TV", prediction,  "EV", x_pos)
                 for t in range(1,self.N,1):
                     
-                    ## Prob(||(tv_pos + tv_noise - opt_state- noise_correction)||_2^2 >= 4*self.rob^2_dia) >= 1-epsilon
-                    ## g(o,p) = || o -p |||^2,   l(o,p) = g(o_0, p_0) +  dg_p(p-p_0) + dg_o (o-o_0)
-
-                    ## Linearization procedure: Project current_state (of robot) onto a sphere of radius rob_dia, and centered at tv_pos.
-
-                    #### Linearized constraint :  
-                    ##   rob_dia^2 +  2*(tv_pos - curr_state)@(opt_state+noise_correction - curr_state) - 2*(tv_pos - curr_state)@(tv_pos+tv_noise - tv_pos) > = rob_dia^2
-                    ##  ==>   (tv_pos - curr_state)@(opt_state+noise_correction - curr_state - tv_noise) > =0
-
-                    #### New chance constraint : 
-                    ## Prob ( (tv_pos - curr_state)@(opt_state+noise_correction - curr_state - tv_noise) > =0 ) >= 1-eps
-                    ##  ==>  Prob((tv_pos - curr_state)@(noise_correction -tv_noise) >= -(tv_pos - curr_state)@(opt_state-curr_state)  ) >=1-eps
-                    ##  ==>  sp.erfinv(1-eps)*||(tv_pos-curr_state)@(noise_covar + tv_covar)|| >=  -(tv_pos - curr_state)@(opt_state-curr_state)
+                    # A_m = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Qs[k][j][t-1]
                     
-                    ## opt_state[k, :]+noise_correction[k] = A_rob[k, :]@curr_state + B_rob[k,:]@opt_controls+  + C_rob +     B_rob[k,:]@K_stack[k][j]@(O_stack[j]- E[O_stack[j]]) + E_rob@W_t
-                    ## noise_correction[k]   =  B_rob[k,:]@K_stack[k][j]@E_obs[k][j]@N_t + E_rob@W_t
-                    
-                    A_m = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Qs[k][j][t-1]
-                    
-                    Rtv   =  Revs[t]@Qs[k][j][t-1].T
-                    A_m_b = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Rtv.T
-                    b_m = ca.DM([obs_dims[k][0]+0.75, obs_dims[k][0]+0.75, obs_dims[k][1]+0.5, obs_dims[k][1]+0.5]) + A_m_b@prediction[:,t]
-                    lmbd = obca_lmbd[k][j][:,t-1]
-                    psi = np.arcsin(Revs[t][0,1].squeeze())
+                    # Rtv   =  Revs[t]@Qs[k][j][t-1].T
+                    # A_m_b = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Rtv.T
+                    # b_m = ca.DM([obs_dims[k][0]+0.75, obs_dims[k][0]+0.75, obs_dims[k][1]+0.5, obs_dims[k][1]+0.5]) + A_m_b@prediction[:,t]
+                    # lmbd = obca_lmbd[k][j][:,t-1]
+                    # psi = np.arcsin(Revs[t][0,1].squeeze())
                     
                     
-                    if type(self.prev_controls[agent_id])==type({}):
-                        lmbd_l = self.prev_controls[agent_id]['obca_lmbd'][k][j][:,t-1]
-                        # if self.linearized_ca:
-                        #     lmbd_l = 0.1*ca.DM.ones(4,1)+lmbd_l
-                    else:
-                        lmbd_l = 0.1*ca.DM.ones(4,1)
+                    # if type(self.prev_controls[agent_id])==type({}):
+                    #     lmbd_l = self.prev_controls[agent_id]['obca_lmbd'][k][j][:,t-1]
+                    #     # if self.linearized_ca:
+                    #     #     lmbd_l = 0.1*ca.DM.ones(4,1)+lmbd_l
+                    # else:
+                    #     lmbd_l = 0.1*ca.DM.ones(4,1)
                     oa_ref=prediction[:,t]
                     
                     
-                    
-                    
-                    # oa_ref+=(self.x_pos[:,t]-self.pos_tvs[k][m][:,t])/((self.x_pos[:,t]-self.pos_tvs[k][m][:,t]).T@self.Qs[k][m][t-1]@(self.x_pos[:,t]-self.pos_tvs[k][m][:,t]))**(0.5)
-                    # oa_ref+=(x_pos[:,0]-oa_ref)/((x_pos[:,0]-oa_ref).T@Qs[k][j][t-1]@(x_pos[:,0]-oa_ref))**(0.5)
+                    # oa_ref+=(x_pos[:,t]-self.pos_tvs[k][m][:,t])/((self.x_pos[:,t]-self.pos_tvs[k][m][:,t]).T@self.Qs[k][m][t-1]@(self.x_pos[:,t]-self.pos_tvs[k][m][:,t]))**(0.5)
+                    oa_ref+=(x_pos[:,t]-oa_ref)/((x_pos[:,t]-oa_ref).T@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref))**(0.5)
                     
                     
                     # Coefficient of random variables in affine chance constraint
@@ -308,23 +289,23 @@ class MM_MPC_TI(MPC_Base):
                         if mode_map((m,k))!=j:
                             continue
                         # else:
-                        ey  = A[3*(t+1)-1,:]@ca.DM(current_state)+B[3*(t+1)-1,:]@ca.vec(opt_controls[m].T)
-                        pos_dev = ca.vertcat(-ey*ca.sin(psi), ey*ca.cos(psi)) 
+                        # ey  = A[3*(t+1)-1,:]@ca.DM(current_state)+B[3*(t+1)-1,:]@ca.vec(opt_controls[m].T)
+                        # pos_dev = ca.vertcat(-ey*ca.sin(psi), ey*ca.cos(psi)) 
                         lin_dist = (oa_ref-prediction[:,t]).T
-                        # print(f" time:{t} linearized relative displacement:", lin_dist, "ev position proj", oa_ref, "tv position", prediction[:,t])
+                        # # print(f" time:{t} linearized relative displacement:", lin_dist, "ev position proj", oa_ref, "tv position", prediction[:,t])
                         noise_coeff = ca.horzcat(dpos[t-1]@(E[3*t:3*(t+1):2,:]),*[dpos[t-1]@B[3*t:3*(t+1):2,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*(dpos_tvs[k][j][t-1]@E_obs[k][j][2*t,:]) for l in range(self.n_obs)])
                         # noise_coeff_const = ca.horzcat(dpos[t-1].T@(E[3*t:3*(t+1):2,:]),*[0*dpos[t-1]@B[2*t,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*dpos_tvs[k][j][t-1]@E_obs[k][j][2*t,:] for l in range(self.n_obs)])
-                        # rv_dist=sp.erfinv(1-self.delta)*(lin_dist@Qs[k][j][t-1]@noise_coeff)
+                        rv_dist=sp.erfinv(1-self.delta)*(lin_dist@Qs[k][j][t-1]@noise_coeff)
                     
                     
-                        # try:
-                        #     nom_dist=lin_dist@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref+dpos[t-1]*(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m]-z_lin[0,t]))
-                        #     # print(f"nominal distance delta:  {lin_dist@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref + dpos[t-1]*(A[2*t,:]@ca.DM(current_state)-z_lin[0,t]))}" )
-                        # except:
-                        #     import pdb; pdb.set_trace()
-                        # opti.subject_to(||rv_dist||_2<=nom_dist)
-                        # opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
-                        # opti.subject_to(nom_dist>=0)
+                        try:
+                            nom_dist=lin_dist@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref+dpos[t-1]*(A[3*t:3*(t+1):2,:]@ca.DM(current_state)+B[3*t:3*(t+1):2,:]@ca.vec(opt_controls[m].T)-x_lin[0:3:2,t]))
+                            # print(f"nominal distance delta:  {lin_dist@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref + dpos[t-1]*(A[2*t,:]@ca.DM(current_state)-z_lin[0,t]))}" )
+                        except:
+                            import pdb; pdb.set_trace()
+                       
+                        opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
+                        opti.subject_to(nom_dist>=0)
                         # if self.linearized_ca:
                         #     add_var = opti.variable(1)
                         #     nom_obca = (A_m_b@r_fun(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m])[:2]-b_m).T@lmbd-4-add_var
@@ -348,17 +329,17 @@ class MM_MPC_TI(MPC_Base):
                         # else:
                             
                             
-                        nom_obca = (A_m_b@(r_fun(A[3*t,:]@ca.DM(current_state)+B[3*t,:]@ca.vec(opt_controls[m].T))[:2]+pos_dev)-b_m).T@lmbd-4.5
-                        # nom_obca = (A_m@(x_pos[:,t]+dpos[t-1]@(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m]))-b_m).T@lmbd
-                        rv_obca  = sp.erfinv(1-self.delta)*(A_m_b@noise_coeff).T@lmbd
+                        # nom_obca = (A_m_b@(r_fun(A[3*t,:]@ca.DM(current_state)+B[3*t,:]@ca.vec(opt_controls[m].T))[:2]+pos_dev)-b_m).T@lmbd-4.5
+                        # # nom_obca = (A_m@(x_pos[:,t]+dpos[t-1]@(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m]))-b_m).T@lmbd
+                        # rv_obca  = sp.erfinv(1-self.delta)*(A_m_b@noise_coeff).T@lmbd
                         
                         # opti.subject_to((A_m@r_fun(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m])[:2]-b_m).T@lmbd >= 6)
                         
-                        opti.subject_to(ca.sqrt(rv_obca.T@rv_obca+1e-6)<=nom_obca)
-                        # opti.subject_to(rv_obca.T@rv_obca <=nom_obca**2+9-6*nom_obca)
+                        # opti.subject_to(ca.sqrt(rv_obca.T@rv_obca+1e-6)<=nom_obca)
+                        # # opti.subject_to(rv_obca.T@rv_obca <=nom_obca**2+9-6*nom_obca)
                         
-                        opti.subject_to(lmbd>=0)
-                        opti.subject_to(lmbd.T@A_m@A_m.T@lmbd <=1+slack)
+                        # opti.subject_to(lmbd>=0)
+                        # opti.subject_to(lmbd.T@A_m@A_m.T@lmbd <=1+slack)
                         
                        
 
@@ -367,12 +348,12 @@ class MM_MPC_TI(MPC_Base):
                             'ipopt.acceptable_tol': 1e-5, 'ipopt.acceptable_obj_change_tol': 1e-4, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9, 'ipopt.max_cpu_time' : 10.0,
                             'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
         # opts_setting = {'ipopt.max_iter':500,  'ipopt.print_level': 0, 'print_time': 0, 'ipopt.warm_start_init_point': 'yes', 'ipopt.acceptable_tol': 1e-4, 'ipopt.acceptable_obj_change_tol': 1e-3, 'ipopt.max_cpu_time' : 30.0}
-        # # opts_setting = {'ipopt.print_level': 0, 'print_time': 0,}
+        
         opti.minimize(total_cost)
 
         opti.solver('ipopt', opts_setting)
         # if self.linearized_ca:
-        # opti.solver('osqp', {}, {'verbose':False})
+        # opti.solver('qpoases', {}, {'verbose':False})
         # else:
         #     opti.solver('ipopt', opts_setting)
             
