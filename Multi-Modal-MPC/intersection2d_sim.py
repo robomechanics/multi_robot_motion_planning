@@ -84,7 +84,7 @@ class Prb_check_n_cluster:
 
         return risk_score
     
-    def cluster_by_top_anchors(self, risk_score): 
+    def get_scenario_clusters(self, risk_score): 
         """
         :param risk_score: risk_score[i][j] = score for obstacle i in mode j
         
@@ -402,13 +402,14 @@ class Simulator():
         u_prev=self.ev.u[self.ev.t-1] if self.ev.t>0 else 0.
         u2d_prev=self.ev.u2d[:,self.ev.t-1] if self.ev.t>0 else np.array([0., 0])
         
-        hits = self.checker.check_all(
+        risk_score = self.checker.check_all(
                     ev_glob       = np.array(x_pos),   # 2×(N+1)
                     all_tv_means  = mm_o_glob,          # per-TV, per-mode mean traj
                     all_tv_covs   = mm_glob_covs,            # per-TV, per-mode list of covariances
                     all_tv_shapes = mm_Qs               # per-TV, per-mode geometric ellipses
                 )
-        
+        scenario_clusters = self.checker.get_scenario_clusters(risk_score)
+        # pdb.set_trace()
         
         update_dict={'x0': self.ev.traj2d[:,self.ev.t], 'u_prev': u2d_prev,
                      'o0': [v.traj[:,v.t] for v in self.agents if v!=self.ev], 'o_glob': mm_o_glob, 
