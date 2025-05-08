@@ -9,6 +9,9 @@ from scipy.stats import multivariate_normal
 import pdb
 from functools import reduce
 
+
+
+
 class MM_MPC_TI(MPC_Base):            
     def _get_robot_ATV_dynamics(self, x_lin):
         """
@@ -98,9 +101,9 @@ class MM_MPC_TI(MPC_Base):
     def run_single_mpc(self, agent_id, update_dict):
         # casadi parameters
         # if self.linearized_ca:
-        # opti = ca.Opti('conic')
+        opti = ca.Opti('conic')
         # else:
-        opti = ca.Opti()
+        # opti = ca.Opti()
 
         current_state = update_dict['x0']
         x_lin         = update_dict['z_lin']
@@ -115,22 +118,35 @@ class MM_MPC_TI(MPC_Base):
         mode_map = lambda x : mode_combos[x[0]][x[1]]
         
         Revs = update_dict['Revs']
-
-       
+        
+        if 'clusters' in update_dict:
+            clusters = update_dict['clusters']
+            num_modes = len(clusters)
+            scene_modes = num_modes
+        else:
+            clusters = None
+            num_modes = self.num_modes
+            scene_modes = num_modes**n_obs
         def _get_mm_bias(j):
-            return reduce(lambda x,y : x+y, [opt_bias_mm[k][mode_map((j,k))] for k in range(n_obs)])
-            
+            if clusters is  None:       
+                return reduce(lambda x,y : x+y, [opt_bias_mm[k][mode_map((j,k))] for k in range(n_obs)])
+            else:
+                return reduce(lambda x,y : x+y, [opt_bias_mm[k][j] for k in range(n_obs)])
+        
         rob_u = opti.variable(self.N, 2)
-        opt_bias_mm  = [[opti.variable(self.N-self.robust_horizon,2) for _ in range(self.num_modes)] for _ in range(n_obs)]
-   
-        opt_controls = [rob_u+ca.vertcat(ca.DM(self.robust_horizon,2), _get_mm_bias(j)) for j in range(self.num_modes**n_obs)]
+        
+        
+        opt_bias_mm  = [[opti.variable(self.N-self.robust_horizon,2) for _ in range(num_modes)] for _ in range(n_obs)]
+
+        opt_controls = [rob_u+ca.vertcat(ca.DM(self.robust_horizon,2), _get_mm_bias(j)) for j in range(scene_modes)]
+         
         # opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(self.num_modes)]
-        obca_lmbd    = [[opti.variable(4,self.N-1) for _ in range(self.num_modes)] for _ in range(n_obs)]  
+        # obca_lmbd    = [[opti.variable(4,self.N-1) for _ in range(self.num_modes)] for _ in range(n_obs)]  
         A_rob, B_rob, E_rob = [], [], []
         slack = opti.variable(1)
         opt_states, opt_x, opt_y, v, a, ey  = [], [], [], [], [], []
         A, B, E = self._get_robot_ATV_dynamics(x_lin)    
-        for j in range(self.num_modes**n_obs):
+        for j in range(scene_modes):
             # if np.linalg.norm(self.prev_states[agent_id][j])>1e-2:
             
             A_rob.append(A); B_rob.append(B); E_rob.append(E)
@@ -169,8 +185,8 @@ class MM_MPC_TI(MPC_Base):
         
     
 
-        mode_prob = [1/self.num_modes for j in range(self.num_modes)]
-        for j in range(self.num_modes**n_obs):
+        mode_prob = [1/num_modes for j in range(self.num_modes)]
+        for j in range(scene_modes):
             for k in range(self.N):
                 mode_weight = mode_prob[mode_map((j,0))]
                 # if k > self.robust_horizon:
@@ -197,115 +213,174 @@ class MM_MPC_TI(MPC_Base):
             # opti.subject_to(opti.bounded(-1.0, opt_x[j], 1.0))
             # opti.subject_to(opti.bounded(-5, opt_y[j], 5))
             opti.subject_to(opti.bounded(-1, v[j], 7))#self.v_lim))
-            opti.subject_to(opti.bounded(-3, a[j], 3))
+            opti.subject_to(opti.bounded(-5, a[j], 3))
             opti.subject_to(opti.bounded(-2.5, ey[j], 2.5))
       
-        opti.subject_to(opti.bounded(0,slack,0.01))
+        opti.subject_to(opti.bounded(0,slack,0.5))
             
         total_cost = robot_cost + 100000*slack**2
         
         ##### Get chance constraints from the given GMM prediction
         ## aij = (pi - pj) / ||pi - pj|| and bij = ri + rj 
         ## aij^T(pi - pj) - bij >= erf^-1(1 - 2delta)sqrt(2*aij^T(sigma_i + sigma_j)aij)    
-        pol_gains = []
-        T_obs, c_obs, E_obs=[], [], []
+        
 
         if self.feedback:
             K_rob_horizon = [opti.variable(2,2) for t in range(self.robust_horizon-1)]
         else:
             K_rob_horizon = [ca.DM(2,2) for t in range(self.robust_horizon-1)]
+        if clusters is None:
+            pol_gains = []
+            T_obs, c_obs, E_obs=[], [], []  
+            
+            for k, agent_prediction_mm_u_tv in enumerate(zip(gmm_predictions_vector, mm_input_vector)):
+                agent_prediction, mm_u_tv = agent_prediction_mm_u_tv
+                T_obs_k, c_obs_k, E_obs_k=[], [], []
+                pol_gains_k=[]
+
+                for mode, prediction in enumerate(agent_prediction):
+                    u_tv = mm_u_tv[mode]
+            
+                    covariances = ca.diag(noise_chars[k])
+                    
+
+                    if self.feedback:
+                        K = K_rob_horizon+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
+                    else:
+                        K = K_rob_horizon+[ca.DM(2,2) for t in range(self.N-self.robust_horizon)]
+                    
+                    K_stack=ca.diagcat(ca.DM(2,2),*[K[t] for t in range(self.N-1)]) 
+                    obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
         
-        for k, agent_prediction_mm_u_tv in enumerate(zip(gmm_predictions_vector, mm_input_vector)):
-            agent_prediction, mm_u_tv = agent_prediction_mm_u_tv
-            T_obs_k, c_obs_k, E_obs_k=[], [], []
-            pol_gains_k=[]
+                    total_cost+= 100*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
 
-            for mode, prediction in enumerate(agent_prediction):
-                u_tv = mm_u_tv[mode]
-           
-                covariances = ca.diag(noise_chars[k])
+                    pol_gains_k.append(K_stack)
+            
+                    T_o, c_o, E_o= self._get_obs_ATV_dynamics(u_tv, noise_chars[k])
+
+                    T_obs_k.append(T_o)
+                    c_obs_k.append(c_o)
+                    E_obs_k.append(E_o)
+
+                pol_gains.append(pol_gains_k)
+                T_obs.append(T_obs_k)
+                c_obs.append(c_obs_k)
+                E_obs.append(E_obs_k)
+        else:
+            mm_tv_pred = {k: {mode :  pred for mode, pred in enumerate(agent_prediction)} for k, (agent_prediction, _) in enumerate(zip(gmm_predictions_vector, mm_input_vector))}
+            mm_tv_u    = {k: {mode :  u_tv for mode, u_tv in enumerate(mm_u_tv)} for k, (_, mm_u_tv) in enumerate(zip(gmm_predictions_vector, mm_input_vector))}
+            pol_gains = {k: {j :  None for j in scene_modes} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))}
+            T_obs, c_obs, E_obs={k: {mode :  None for mode, _ in enumerate(agent_prediction)} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))},\
+                                {k: {mode :  None for mode, _ in enumerate(agent_prediction)} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))},\
+                                {k: {mode :  None for mode, _ in enumerate(agent_prediction)} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))}
+            for j, cluster in enumerate(clusters):
+                for scen in cluster:
+                    for k in range(n_obs):
+                        
+                        u_tv = mm_tv_u[scen[k]]
+                        prediction = mm_tv_pred[k][scen[k]]
+                        
+                        if self.feedback:
+                            K = K_rob_horizon+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
+                        else:
+                            K = K_rob_horizon+[ca.DM(2,2) for t in range(self.N-self.robust_horizon)]
+                        covariances = ca.diag(noise_chars[k])
+                        K_stack=ca.diagcat(ca.DM(2,2),*[K[t] for t in range(self.N-1)]) 
+                        obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
+                        obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
+            
+                        total_cost+= 100*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
+                        
+                        pol_gains[k][j] = K_stack
+                        T_o, c_o, E_o= self._get_obs_ATV_dynamics(u_tv, noise_chars[k])
+                        
+                        T_obs[k][scen[k]], c_obs[k][scen[k]], E_obs[k][scen[k]] = T_o, c_o, E_o
+                        
+                        total_cost+= 100*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
+                        
+                    
                 
-
-                if self.feedback:
-                    K = K_rob_horizon+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
-                else:
-                    K = K_rob_horizon+[ca.DM(2,2) for t in range(self.N-self.robust_horizon)]
                 
-                K_stack=ca.diagcat(ca.DM(2,2),*[K[t] for t in range(self.N-1)]) 
-
-                
-                obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
-     
-                total_cost+= 100*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
-
-                pol_gains_k.append(K_stack)
-        
-                T_o, c_o, E_o= self._get_obs_ATV_dynamics(u_tv, noise_chars[k])
-
-                T_obs_k.append(T_o)
-                c_obs_k.append(c_o)
-                E_obs_k.append(E_o)
-
-            pol_gains.append(pol_gains_k)
-            T_obs.append(T_obs_k)
-            c_obs.append(c_obs_k)
-            E_obs.append(E_obs_k)
         x_pos = update_dict['x_pos']
         Qs = update_dict['Qs']
         dpos = update_dict['dpos']
         dpos_tvs = update_dict['droutes']
         
         r_fun =update_dict['route_fun']
-        for k, agent_prediction in enumerate(gmm_predictions_vector):
-            for j, prediction in enumerate(agent_prediction):
-                # print("Jacobians", "Ev", dpos, "Tv", dpos_tvs[k][j])
-                # print("Positions","TV", prediction,  "EV", x_pos)
-                for t in range(1,self.N,1):
-                    
-                    # A_m = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Qs[k][j][t-1]
-                    
-                    # Rtv   =  Revs[t]@Qs[k][j][t-1].T
-                    # A_m_b = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Rtv.T
-                    # b_m = ca.DM([obs_dims[k][0]+0.75, obs_dims[k][0]+0.75, obs_dims[k][1]+0.5, obs_dims[k][1]+0.5]) + A_m_b@prediction[:,t]
-                    # lmbd = obca_lmbd[k][j][:,t-1]
-                    # psi = np.arcsin(Revs[t][0,1].squeeze())
-                    
-                    
-                    # if type(self.prev_controls[agent_id])==type({}):
-                    #     lmbd_l = self.prev_controls[agent_id]['obca_lmbd'][k][j][:,t-1]
-                    #     # if self.linearized_ca:
-                    #     #     lmbd_l = 0.1*ca.DM.ones(4,1)+lmbd_l
-                    # else:
-                    #     lmbd_l = 0.1*ca.DM.ones(4,1)
-                    oa_ref=prediction[:,t]
-                    
-                    
-                    # oa_ref+=(x_pos[:,t]-self.pos_tvs[k][m][:,t])/((self.x_pos[:,t]-self.pos_tvs[k][m][:,t]).T@self.Qs[k][m][t-1]@(self.x_pos[:,t]-self.pos_tvs[k][m][:,t]))**(0.5)
-                    oa_ref+=(x_pos[:,t]-oa_ref)/((x_pos[:,t]-oa_ref).T@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref))**(0.5)
-                    
-                    
-                    # Coefficient of random variables in affine chance constraint
-                    for m in range(0, self.num_modes**n_obs,2):
-                        if mode_map((m,k))!=j:
-                            continue
+        if clusters is None:
+            for k, agent_prediction in enumerate(gmm_predictions_vector):
+                for j, prediction in enumerate(agent_prediction):
+                    # print("Jacobians", "Ev", dpos, "Tv", dpos_tvs[k][j])
+                    # print("Positions","TV", prediction,  "EV", x_pos)
+                    for t in range(1,self.N,1):
+                        
+                        # A_m = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Qs[k][j][t-1]
+                        
+                        # Rtv   =  Revs[t]@Qs[k][j][t-1].T
+                        # A_m_b = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Rtv.T
+                        # b_m = ca.DM([obs_dims[k][0]+0.75, obs_dims[k][0]+0.75, obs_dims[k][1]+0.5, obs_dims[k][1]+0.5]) + A_m_b@prediction[:,t]
+                        # lmbd = obca_lmbd[k][j][:,t-1]
+                        # psi = np.arcsin(Revs[t][0,1].squeeze())
+                        
+                        
+                        # if type(self.prev_controls[agent_id])==type({}):
+                        #     lmbd_l = self.prev_controls[agent_id]['obca_lmbd'][k][j][:,t-1]
+                        #     # if self.linearized_ca:
+                        #     #     lmbd_l = 0.1*ca.DM.ones(4,1)+lmbd_l
                         # else:
-                        # ey  = A[3*(t+1)-1,:]@ca.DM(current_state)+B[3*(t+1)-1,:]@ca.vec(opt_controls[m].T)
-                        # pos_dev = ca.vertcat(-ey*ca.sin(psi), ey*ca.cos(psi)) 
-                        lin_dist = (oa_ref-prediction[:,t]).T
-                        # # print(f" time:{t} linearized relative displacement:", lin_dist, "ev position proj", oa_ref, "tv position", prediction[:,t])
-                        noise_coeff = ca.horzcat(dpos[t-1]@(E[3*t:3*(t+1):2,:]),*[dpos[t-1]@B[3*t:3*(t+1):2,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*(dpos_tvs[k][j][t-1]@E_obs[k][j][2*t,:]) for l in range(self.n_obs)])
-                        # noise_coeff_const = ca.horzcat(dpos[t-1].T@(E[3*t:3*(t+1):2,:]),*[0*dpos[t-1]@B[2*t,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*dpos_tvs[k][j][t-1]@E_obs[k][j][2*t,:] for l in range(self.n_obs)])
-                        rv_dist=sp.erfinv(1-self.delta)*(lin_dist@Qs[k][j][t-1]@noise_coeff)
-                    
-                    
-                        try:
-                            nom_dist=lin_dist@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref+dpos[t-1]*(A[3*t:3*(t+1):2,:]@ca.DM(current_state)+B[3*t:3*(t+1):2,:]@ca.vec(opt_controls[m].T)-x_lin[0:3:2,t]))
-                            # print(f"nominal distance delta:  {lin_dist@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref + dpos[t-1]*(A[2*t,:]@ca.DM(current_state)-z_lin[0,t]))}" )
-                        except:
-                            import pdb; pdb.set_trace()
-                       
-                        opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
-                        opti.subject_to(nom_dist>=0)
+                        #     lmbd_l = 0.1*ca.DM.ones(4,1)
+                        oa_ref=prediction[:,t]
+                        
+                        
+                        # oa_ref+=(x_pos[:,t]-self.pos_tvs[k][m][:,t])/((self.x_pos[:,t]-self.pos_tvs[k][m][:,t]).T@self.Qs[k][m][t-1]@(self.x_pos[:,t]-self.pos_tvs[k][m][:,t]))**(0.5)
+                        oa_ref+=(x_pos[:,t]-oa_ref)/((x_pos[:,t]-oa_ref).T@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref))**(0.5)
+                        
+                        
+                        # Coefficient of random variables in affine chance constraint
+                        for m in range( self.num_modes**n_obs,1):
+                            if mode_map((m,k))!=j:
+                                continue
+                            # else:
+                            # ey  = A[3*(t+1)-1,:]@ca.DM(current_state)+B[3*(t+1)-1,:]@ca.vec(opt_controls[m].T)
+                            # pos_dev = ca.vertcat(-ey*ca.sin(psi), ey*ca.cos(psi)) 
+                            lin_dist = (oa_ref-prediction[:,t]).T
+                            # # print(f" time:{t} linearized relative displacement:", lin_dist, "ev position proj", oa_ref, "tv position", prediction[:,t])
+                            noise_coeff = ca.horzcat(dpos[t-1]@(E[3*t:3*(t+1):2,:]),*[dpos[t-1]@B[3*t:3*(t+1):2,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*(dpos_tvs[k][j][t-1]@E_obs[k][j][2*t,:]) for l in range(self.n_obs)])
+                            # noise_coeff_const = ca.horzcat(dpos[t-1].T@(E[3*t:3*(t+1):2,:]),*[0*dpos[t-1]@B[2*t,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*dpos_tvs[k][j][t-1]@E_obs[k][j][2*t,:] for l in range(self.n_obs)])
+                            rv_dist=sp.erfinv(1-self.delta)*(lin_dist@Qs[k][j][t-1]@noise_coeff)
+                        
+                        
+                            try:
+                                ds = A[3*t:3*(t+1):2,:]@ca.DM(current_state)+B[3*t:3*(t+1):2,:]@ca.vec(opt_controls[m].T)
+                                dx = dpos[t-1]@(ds-x_lin[0:3:2,t].T)
+                                nom_dist=lin_dist@Qs[k][j][t-1]@(x_pos[:,t].T+dx-oa_ref)
+                                # print(f"nominal distance delta:  {lin_dist@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref + dpos[t-1]*(A[2*t,:]@ca.DM(current_state)-z_lin[0,t]))}" )
+                            except:
+                                import pdb; pdb.set_trace()
+                        
+                            opti.subject_to(rv_dist@rv_dist.T<=(nom_dist+slack)**2)
+                            opti.subject_to(nom_dist>=-slack)
+        else:
+            for j, cluster in enumerate(clusters):
+                for scen in cluster:
+                    for k in range(n_obs):
+                        u_tv = mm_tv_u[scen[k]]
+                        prediction = mm_tv_pred[k][scen[k]]
+                        for t in range(1,self.N,1):
+                            oa_ref=prediction[:,t]
+                            oa_ref+=(x_pos[:,t]-oa_ref)/((x_pos[:,t]-oa_ref).T@Qs[k][scen[k]][t-1]@(x_pos[:,t]-oa_ref))**(0.5)
+                            
+                            lin_dist = (oa_ref-prediction[:,t]).T
+                            noise_coeff = ca.horzcat(dpos[t-1]@(E[3*t:3*(t+1):2,:]),*[dpos[t-1]@B[3*t:3*(t+1):2,:]@pol_gains[l][j]@E_obs[l][scen[l]][:2*self.N,:]-int(l==k)*(dpos_tvs[k][scen[k]][t-1]@E_obs[k][scen[k]][2*t,:]) for l in range(n_obs)])
+                            rv_dist=sp.erfinv(1-self.delta)*(lin_dist@Qs[k][scen[k]][t-1]@noise_coeff)
+                            ds = A[3*t:3*(t+1):2,:]@ca.DM(current_state)+B[3*t:3*(t+1):2,:]@ca.vec(opt_controls[j].T)
+                            dx = dpos[t-1]@(ds-x_lin[0:3:2,t].T)
+                            nom_dist=lin_dist@Qs[k][scen[k]][t-1]@(x_pos[:,t].T+dx-oa_ref)
+                            opti.subject_to(rv_dist@rv_dist.T<=(nom_dist+slack)**2)
+                            opti.subject_to(nom_dist>=-slack)
+                
+                        # soc = ca.soc(rv_dist, nom_dist)
+                        # opti.subject_to(soc>0)
                         # if self.linearized_ca:
                         #     add_var = opti.variable(1)
                         #     nom_obca = (A_m_b@r_fun(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m])[:2]-b_m).T@lmbd-4-add_var
@@ -351,9 +426,9 @@ class MM_MPC_TI(MPC_Base):
         
         opti.minimize(total_cost)
 
-        opti.solver('ipopt', opts_setting)
+        # opti.solver('ipopt', opts_setting)
         # if self.linearized_ca:
-        # opti.solver('qpoases', {}, {'verbose':False})
+        opti.solver('proxqp', {}, {'verbose':False})
         # else:
         #     opti.solver('ipopt', opts_setting)
             
@@ -365,12 +440,12 @@ class MM_MPC_TI(MPC_Base):
             opti.set_initial(rob_u, rob_u_init)
             for k in range(n_obs):
             
-                for j in range(self.num_modes):
+                for j in range(num_modes):
                     bias_init  = self.prev_controls[agent_id]['bias'][k][j]
-                    obca_init  = self.prev_controls[agent_id]['obca_lmbd'][k][j]
                     opti.set_initial(opt_bias_mm[k][j], bias_init)
-                    if not self.linearized_ca:  
-                        opti.set_initial(obca_lmbd[k][j], obca_init)
+                    # obca_init  = self.prev_controls[agent_id]['obca_lmbd'][k][j]
+                    # if not self.linearized_ca:  
+                    #     opti.set_initial(obca_lmbd[k][j], obca_init)
                 # opti.set_initial(bias_terms[j], bias_init)  # (N, 2)
             # else:
             #     opti.set_initial(opt_controls[j], self.prev_controls[agent_id][j])
@@ -383,42 +458,46 @@ class MM_MPC_TI(MPC_Base):
             t_ = time.time()
            
             sol = opti.solve_limited()
-           
+            
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
             
-            for mode in range(self.num_modes):
+            for mode in range(num_modes):
                 self.feedback_gains[0][mode] = sol.value(pol_gains[0][mode]).toarray()
                 self.feedback_gains_cache[0][mode].append(sol.value(pol_gains[0][mode]).toarray())
 
             # obtain the control input
-            u_res = [sol.value(opt_controls[j]) for j in range(self.num_modes**n_obs)]
+            u_res = [sol.value(opt_controls[j]) for j in range(scene_modes)]
             # next_states_pred = sol.value(opt_states)
-            next_states_pred = [[ca.DM(current_state).T] for j in range(self.num_modes**n_obs)]
+            next_states_pred = [[ca.DM(current_state).T] for j in range(scene_modes)]
             rob_u_sol   = sol.value(rob_u)
-            bias_sols = [[None for j in range(self.num_modes)] for k in range(n_obs)]
-            obca_sols  = [[None for j in range(self.num_modes)] for k in range(n_obs)]
-            for j in range(self.num_modes**n_obs):
+            bias_sols = [[None for j in range(num_modes)] for k in range(n_obs)]
+            # obca_sols  = [[None for j in range(self.num_modes)] for k in range(n_obs)]
+            for j in range(scene_modes):
                 # for t in range(u_res[j].shape[0]):
                 #     next_states_pred[j].append()
                 # next_states_pred[j] = ca.vertcat(*next_states_pred[j])
                 next_states_pred[j] = sol.value(opt_states[j])
-                for k in range(n_obs):
-                    bias_sols[k][mode_map((j,k))] = sol.value(opt_bias_mm[k][mode_map((j,k))])
-                    if type(self.prev_controls[agent_id])==type({}):
-                        lmbd_l = self.prev_controls[agent_id]['obca_lmbd'][k][mode_map((j,k))]
-                    else:
-                        lmbd_l = 0.1*ca.DM.ones(4, self.N-1)
-                    if self.linearized_ca:
-                        obca_sols[k][mode_map((j,k))] = sol.value(lmbd_l+obca_lmbd[k][mode_map((j,k))])
-                    else:
-                        obca_sols[k][mode_map((j,k))] = sol.value(obca_lmbd[k][mode_map((j,k))])
+                if clusters is None:
+                    for k in range(n_obs):
+                        bias_sols[k][mode_map((j,k))] = sol.value(opt_bias_mm[k][mode_map((j,k))])
+                else:
+                    for k in range(n_obs):
+                        bias_sols[k][j] = sol.value(opt_bias_mm[k][j])
+                    # if type(self.prev_controls[agent_id])==type({}):
+                    #     lmbd_l = self.prev_controls[agent_id]['obca_lmbd'][k][mode_map((j,k))]
+                    # else:
+                    #     lmbd_l = 0.1*ca.DM.ones(4, self.N-1)
+                    # if self.linearized_ca:
+                    #     obca_sols[k][mode_map((j,k))] = sol.value(lmbd_l+obca_lmbd[k][mode_map((j,k))])
+                    # else:
+                    #     obca_sols[k][mode_map((j,k))] = sol.value(obca_lmbd[k][mode_map((j,k))])
                 
            
             # eps_o = sol.value(opt_epsilon_o)
             
             self.prev_states[agent_id] = next_states_pred
-            self.prev_controls[agent_id] = {'control': u_res, 'rob_u' : rob_u_sol, 'bias': bias_sols, 'obca_lmbd':obca_sols}
+            self.prev_controls[agent_id] = {'control': u_res, 'rob_u' : rob_u_sol, 'bias': bias_sols}#, 'obca_lmbd':obca_sols}
             self.prev_pol = pol_gains
             
             # self.prev_epsilon_o[agent_id] = eps_o 
