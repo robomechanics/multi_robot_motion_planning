@@ -131,8 +131,12 @@ class Agent():
         return self.strip_list(eff_a)
 
     
-    def get_next(self,state, control): 
-        return self.A@state+self.B*control
+    def get_next(self,state, control, cov = None): 
+        if cov is None:
+            return self.A@state+self.B*control
+        else:
+            next_cov = np.diag(self.noise_std) + self.A@cov@self.A.T
+            return self.A@state+self.B*control, next_cov
         
     def reset_vehicle(self, init, cl):
         # self.traj=np.zeros((2, self.T_max+1))
@@ -232,8 +236,9 @@ class Agent2D():
 
     
     def get_next(self,state, control): 
+        
         return self.A@state+self.B*control
-    
+        
     def get_next2d(self,state, control): 
         next_state2d=self.A2d(state[1])@state+self.B2d(state[1])@control
         next_state2d[1]=max(next_state2d[1], -0.05)
