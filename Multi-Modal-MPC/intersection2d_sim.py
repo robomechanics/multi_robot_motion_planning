@@ -42,7 +42,7 @@ class Prb_check_n_cluster:
         A = agg_shape
         
         # draw samples of the TV center
-        samples = np.random.multivariate_normal([tv_mean[0], tv_mean[1]], tv_cov, size=self.M)  # (M,2)
+        samples = np.random.multivariate_normal(np.squeeze([tv_mean[0], tv_mean[1]]), tv_cov, size=self.M)  # (M,2)
 
         # compute m2 for each sample: deltas @ A @ deltasᵀ
         deltas = ev_pos[None, :] - samples  # (M,2)
@@ -383,7 +383,20 @@ class Simulator():
         self.ev.traj_glob[:,self.ev.t]=np.array(self.routes[self.ev.cl](self.ev.traj[0,self.ev.t])[:3]).squeeze()
         x_dev, y_dev, psi_dev  = self.get_deviation(self.ev.traj[0,self.ev.t], self.ev.traj2d[-1, self.t], self.ev.u2d[-1, self.t])
        
-        self.ev.traj2d_glob[:, self.t] = self.ev.traj_glob[:, self.t] + np.array([x_dev, y_dev, psi_dev]).squeeze()
+        print("x_dev:", x_dev, "type/shape:", type(x_dev), getattr(x_dev, "shape", None))
+        print("y_dev:", y_dev, "type/shape:", type(y_dev), getattr(y_dev, "shape", None))
+        print("psi_dev:", psi_dev, "type/shape:", type(psi_dev), getattr(psi_dev, "shape", None))
+
+        # extract Python floats from the CasADi DMs
+        x_dev_f = float(x_dev)      # DM(1,1) → Python float
+        y_dev_f = float(y_dev)      # DM(1,1) → Python float
+        psi_dev_f = float(psi_dev)  # already numpy.float64, but safe to cast
+
+        # now build a clean 1-D numpy vector
+        devs = np.array([x_dev_f, y_dev_f, psi_dev_f])  # shape (3,)
+
+
+        self.ev.traj2d_glob[:, self.t] = self.ev.traj_glob[:, self.t] + devs
             
         if u_ev is None:
             v_ =[self.agents[k].traj[:,v.t] for k in self.tv_idxs]
@@ -394,8 +407,6 @@ class Simulator():
             self.ev.step(u_ev)
         self.t+=1
 
-       
-    
     def get_update_dict(self, u_opt=None):
 
         z_lin, x_pos, dpos, mm_o_glob, mm_u_tvs, mm_routes, mm_droutes, mm_Qs, Revs, mm_covs, mm_glob_covs =self._get_preds(u_opt)
