@@ -121,6 +121,7 @@ class Prb_check_n_cluster:
         used = set(s for cluster in clusters for s in cluster)
         leftover = [s for s in all_scenarios if s not in used]
         clusters.append(leftover)
+      
         return clusters
     
     
@@ -147,23 +148,26 @@ class Simulator():
         self.viz_preds=viz_preds
         self.eval_mode = eval_mode
         
-        # Only 3 TVs
-        self.N_modes=[3,3,3]
+        # Added incrementally
+        self.N_modes=[]
         
-        self.checker = Prb_check_n_cluster(all_combinations= list(product(*(range(m) for m in self.N_modes))),num_samples=50)
-
-       
-
+        
         for i,v in enumerate(self.agents):
             if v.role=="TV":
                 self.N_TV+=1
                 self.tvs.append(v)
                 self.tv_idxs.append(i)
+                self.N_modes.append(3)
             elif v.role=="ped":
                 self.peds.append(v)
                 self.ped_idxs.append(i)
+                self.N_modes.append(3)
             else:
                 self.ev=v
+        self.checker = Prb_check_n_cluster(all_combinations= list(product(*(range(m) for m in self.N_modes))),num_samples=50)
+
+       
+
         self.t=0
         self.T=T_FINAL
     
@@ -383,17 +387,17 @@ class Simulator():
         self.ev.traj_glob[:,self.ev.t]=np.array(self.routes[self.ev.cl](self.ev.traj[0,self.ev.t])[:3]).squeeze()
         x_dev, y_dev, psi_dev  = self.get_deviation(self.ev.traj[0,self.ev.t], self.ev.traj2d[-1, self.t], self.ev.u2d[-1, self.t])
        
-        print("x_dev:", x_dev, "type/shape:", type(x_dev), getattr(x_dev, "shape", None))
-        print("y_dev:", y_dev, "type/shape:", type(y_dev), getattr(y_dev, "shape", None))
-        print("psi_dev:", psi_dev, "type/shape:", type(psi_dev), getattr(psi_dev, "shape", None))
+        # print("x_dev:", x_dev, "type/shape:", type(x_dev), getattr(x_dev, "shape", None))
+        # print("y_dev:", y_dev, "type/shape:", type(y_dev), getattr(y_dev, "shape", None))
+        # print("psi_dev:", psi_dev, "type/shape:", type(psi_dev), getattr(psi_dev, "shape", None))
 
-        # extract Python floats from the CasADi DMs
-        x_dev_f = float(x_dev)      # DM(1,1) → Python float
-        y_dev_f = float(y_dev)      # DM(1,1) → Python float
-        psi_dev_f = float(psi_dev)  # already numpy.float64, but safe to cast
+        # # extract Python floats from the CasADi DMs
+        # x_dev_f = float(x_dev)      # DM(1,1) → Python float
+        # y_dev_f = float(y_dev)      # DM(1,1) → Python float
+        # psi_dev_f = float(psi_dev)  # already numpy.float64, but safe to cast
 
         # now build a clean 1-D numpy vector
-        devs = np.array([x_dev_f, y_dev_f, psi_dev_f])  # shape (3,)
+        devs = np.array([float(x_dev), float(y_dev), float(psi_dev)])  # shape (3,)
 
 
         self.ev.traj2d_glob[:, self.t] = self.ev.traj_glob[:, self.t] + devs

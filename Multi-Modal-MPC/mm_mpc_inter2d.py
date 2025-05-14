@@ -101,9 +101,9 @@ class MM_MPC_TI(MPC_Base):
     def run_single_mpc(self, agent_id, update_dict):
         # casadi parameters
         # if self.linearized_ca:
-        opti = ca.Opti('conic')
+        # opti = ca.Opti('conic')
         # else:
-        # opti = ca.Opti()
+        opti = ca.Opti()
 
         current_state = update_dict['x0']
         x_lin         = update_dict['z_lin']
@@ -123,10 +123,13 @@ class MM_MPC_TI(MPC_Base):
             clusters = update_dict['clusters']
             num_modes = len(clusters)
             scene_modes = num_modes
+            print('Doing SM-MPC')
         else:
             clusters = None
             num_modes = self.num_modes
             scene_modes = num_modes**n_obs
+            
+        print(f'Scene modes: {scene_modes}')
         def _get_mm_bias(j):
             if clusters is  None:       
                 return reduce(lambda x,y : x+y, [opt_bias_mm[k][mode_map((j,k))] for k in range(n_obs)])
@@ -135,7 +138,7 @@ class MM_MPC_TI(MPC_Base):
         
         rob_u = opti.variable(self.N, 2)
         
-        
+        # h[j] = h_b + sum_{obst}h[k][j]  for MM, J= scene_mode, for SM, j = cluster index
         opt_bias_mm  = [[opti.variable(self.N-self.robust_horizon,2) for _ in range(num_modes)] for _ in range(n_obs)]
 
         opt_controls = [rob_u+ca.vertcat(ca.DM(self.robust_horizon,2), _get_mm_bias(j)) for j in range(scene_modes)]
@@ -277,7 +280,7 @@ class MM_MPC_TI(MPC_Base):
                 for scen in cluster:
                     for k in range(n_obs):
                         
-                        u_tv = mm_tv_u[scen[k]]
+                        u_tv = mm_tv_u[k][scen[k]]
                         prediction = mm_tv_pred[k][scen[k]]
                         
                         if self.feedback:
@@ -292,6 +295,7 @@ class MM_MPC_TI(MPC_Base):
                         total_cost+= 100*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
                         
                         pol_gains[k][j] = K_stack
+                      
                         T_o, c_o, E_o= self._get_obs_ATV_dynamics(u_tv, noise_chars[k])
                         
                         T_obs[k][scen[k]], c_obs[k][scen[k]], E_obs[k][scen[k]] = T_o, c_o, E_o
@@ -362,9 +366,10 @@ class MM_MPC_TI(MPC_Base):
                             opti.subject_to(nom_dist>=-slack)
         else:
             for j, cluster in enumerate(clusters):
+                print(cluster)
                 for scen in cluster:
                     for k in range(n_obs):
-                        u_tv = mm_tv_u[scen[k]]
+                        u_tv = mm_tv_u[k][scen[k]]
                         prediction = mm_tv_pred[k][scen[k]]
                         for t in range(1,self.N,1):
                             oa_ref=prediction[:,t]
@@ -416,19 +421,22 @@ class MM_MPC_TI(MPC_Base):
                         # opti.subject_to(lmbd>=0)
                         # opti.subject_to(lmbd.T@A_m@A_m.T@lmbd <=1+slack)
                         
-                       
-
-                    
         opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
                             'ipopt.acceptable_tol': 1e-5, 'ipopt.acceptable_obj_change_tol': 1e-4, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9, 'ipopt.max_cpu_time' : 10.0,
                             'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
         # opts_setting = {'ipopt.max_iter':500,  'ipopt.print_level': 0, 'print_time': 0, 'ipopt.warm_start_init_point': 'yes', 'ipopt.acceptable_tol': 1e-4, 'ipopt.acceptable_obj_change_tol': 1e-3, 'ipopt.max_cpu_time' : 30.0}
         
-        opti.minimize(total_cost)
+        # opti.minimize(total_cost)
 
-        # opti.solver('ipopt', opts_setting)
+        opti.solver('ipopt', opts_setting)
+        num_decision_vars = opti.nx
+        print(num_decision_vars)
+
+        num_constraints = opti.ng
+        print(num_constraints)
+
         # if self.linearized_ca:
-        opti.solver('proxqp', {}, {'verbose':False})
+        # opti.solver('proxqp', {}, {'verbose':False})
         # else:
         #     opti.solver('ipopt', opts_setting)
             
