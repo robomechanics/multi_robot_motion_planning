@@ -9,7 +9,12 @@ from utils import *
 from path_planner import calc_spline_course
 
 import numpy as np
-
+import matplotlib.pyplot as plt
+import matplotlib.transforms as tf
+from celluloid import Camera
+from IPython.display import HTML
+from matplotlib.animation import FFMpegWriter   # ← import added
+import pdb
 
 initial_states = [[0.0, 2.0]]
 final_states = [[100.0, 4.0]]
@@ -91,3 +96,19 @@ else:
                     mpc.simulate(Sim)
                     
                     print(f"Finished algorithm {alg}, trial {trial}, noise level {noise_level}")
+
+                    fig, ax= plt.subplots()
+                    camera = Camera(fig)
+                    for  i in range(Sim.t):
+                        Sim.draw_intersection(ax, i)
+                        camera.snap()
+                    animation = camera.animate(repeat = True, repeat_delay = 100)
+                    writer = FFMpegWriter(
+                    fps=15,                    # frames per second
+                    metadata=dict(artist='You'),
+                    bitrate=1800)
+
+                    # 3. Save to MP4
+                    animation.save('intersection.mp4', writer=writer)
+
+                    print("Saved animation to intersection.mp4")
