@@ -119,7 +119,7 @@ class MM_MPC_TI(MPC_Base):
         
         Revs = update_dict['Revs']
         
-        if 'clusters' in update_dict:
+        if 'clusters' in update_dict and 'MC-MPC' in self.scenario:
             clusters = update_dict['clusters']
             num_modes = len(clusters)
             scene_modes = num_modes

@@ -42,7 +42,8 @@ class Prb_check_n_cluster:
         A = agg_shape
         
         # draw samples of the TV center
-        samples = np.random.multivariate_normal([tv_mean[0], tv_mean[1]], tv_cov, size=self.M)  # (M,2)
+    
+        samples = np.random.multivariate_normal(np.array([tv_mean[0], tv_mean[1]]).squeeze(), tv_cov, size=self.M)  # (M,2)
 
         # compute m2 for each sample: deltas @ A @ deltasᵀ
         deltas = ev_pos[None, :] - samples  # (M,2)
@@ -382,8 +383,8 @@ class Simulator():
 
         self.ev.traj_glob[:,self.ev.t]=np.array(self.routes[self.ev.cl](self.ev.traj[0,self.ev.t])[:3]).squeeze()
         x_dev, y_dev, psi_dev  = self.get_deviation(self.ev.traj[0,self.ev.t], self.ev.traj2d[-1, self.t], self.ev.u2d[-1, self.t])
-       
-        self.ev.traj2d_glob[:, self.t] = self.ev.traj_glob[:, self.t] + np.array([x_dev, y_dev, psi_dev]).squeeze()
+        
+        self.ev.traj2d_glob[:, self.t] = self.ev.traj_glob[:, self.t] + np.array([float(x_dev), float(y_dev), float(psi_dev)]).squeeze()
             
         if u_ev is None:
             v_ =[self.agents[k].traj[:,v.t] for k in self.tv_idxs]

@@ -44,7 +44,7 @@ obs = {"static": static_obs, "dynamic": obs_traj}
 
 
 num_trials = 5
-algs = ["MM-MPC", "Branch-MPC", "Robust-MPC"]
+algs = ["MM-MPC", "MC-MPC", "Branch-MPC", "Robust-MPC"]
 # algs = ["MM-MPC"]
 branch_times = [2, 4, 8]
 noise_levels = [0.1, 0.2, 0.3]
@@ -76,8 +76,8 @@ else:
                     Sim.set_MPC_N(10)
                     scenario = alg + "_" + "n_" + str(noise_level) + "_b_" + str(bt)+'_v3'
                     
-
-                    if alg == "MM-MPC":
+                    
+                    if alg in ["MM-MPC", 'MC-MPC']:
 
                         mpc = MM_MPC_TI(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=map, feedback=True, robust_horizon=bt, ref=None)
                         # mpc = MM_MPC_TI(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_agent, uncontrolled_traj)
