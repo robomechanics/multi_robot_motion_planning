@@ -119,7 +119,7 @@ class MM_MPC_TI(MPC_Base):
         
         Revs = update_dict['Revs']
         
-        if 'clusters' in update_dict:
+        if 'clusters' in update_dict and 'SM-MPC' in self.scenario:
             clusters = update_dict['clusters']
             num_modes = len(clusters)
             scene_modes = num_modes
@@ -269,7 +269,7 @@ class MM_MPC_TI(MPC_Base):
         else:
             mm_tv_pred = {k: {mode :  pred for mode, pred in enumerate(agent_prediction)} for k, (agent_prediction, _) in enumerate(zip(gmm_predictions_vector, mm_input_vector))}
             mm_tv_u    = {k: {mode :  u_tv for mode, u_tv in enumerate(mm_u_tv)} for k, (_, mm_u_tv) in enumerate(zip(gmm_predictions_vector, mm_input_vector))}
-            pol_gains = {k: {j :  None for j in scene_modes} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))}
+            pol_gains = {k: {j :  None for j in range(scene_modes)} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))}
             T_obs, c_obs, E_obs={k: {mode :  None for mode, _ in enumerate(agent_prediction)} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))},\
                                 {k: {mode :  None for mode, _ in enumerate(agent_prediction)} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))},\
                                 {k: {mode :  None for mode, _ in enumerate(agent_prediction)} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))}

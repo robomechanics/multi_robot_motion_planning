@@ -49,7 +49,7 @@ obs = {"static": static_obs, "dynamic": obs_traj}
 
 
 num_trials = 5
-algs = ["MM-MPC", "Branch-MPC", "Robust-MPC"]
+algs = ["SM-MPC", "MM-MPC", "Branch-MPC", "Robust-MPC"]
 # algs = ["MM-MPC"]
 branch_times = [2, 4, 8]
 noise_levels = [0.1, 0.2, 0.3]

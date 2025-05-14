@@ -426,7 +426,8 @@ class Simulator():
                      'o0': [v.traj[:,v.t] for v in self.agents if v!=self.ev], 'o_glob': mm_o_glob, 
                      'routes': mm_routes, 'droutes': mm_droutes, 'Qs' : mm_Qs, 'noise_std' : [v.noise_std for v in self.agents if v!=self.ev],
                      'z_lin': z_lin, 'x_pos':x_pos,  'dpos': dpos, 'u_tvs': mm_u_tvs, 'route_fun': self.routes[self.ev.cl],
-                     'sizes':[v.veh_dims for v in self.agents if v!=self.ev], 'Revs': Revs}
+                     'sizes':[v.veh_dims for v in self.agents if v!=self.ev], 'Revs': Revs,
+                     'clusters': scenario_clusters}
         
         self.mm_preds.append(mm_o_glob)
 
