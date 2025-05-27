@@ -28,7 +28,7 @@ cost_func_params = {
 }
 mpc_params = {
     'num_agents': 1,
-    'dt': 0.25,
+    'dt': 0.2,
     'N' : 10,
     'rob_dia': 0.3,
     'v_lim': 8.0,
@@ -67,11 +67,11 @@ else:
                 uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
                 for alg in algs:
                     ev_noise_std=[0.01,0.01]
-                    ev=Agent2D(role='EV', cl=3, state=np.array([40, 6.5 + random.uniform(-0.5,0.5), 0.
-                                                                ]), noise_std=ev_noise_std)
+                    ev=Agent2D(role='EV', cl=3, state=np.array([30, 6.5 + random.uniform(-0.5,0.5), 0.
+                                                                ]), dt = mpc_params['dt'], noise_std=ev_noise_std)
                     tv_noise_std=[noise_level]*2
-                    agents=[Agent(role='TV', cl=4, state=np.array([20, 0.1]), noise_std=tv_noise_std) for i in range(1)]
-                    agents.append(Agent(role='ped', cl=7, state=np.array([0., 4.5+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 8+random.uniform(-0.5,0.5)))
+                    agents=[Agent(role='TV', cl=4, dt = mpc_params['dt'], state=np.array([20, 0.1]), noise_std=tv_noise_std) for i in range(1)]
+                    agents.append(Agent(role='ped', cl=7, dt = mpc_params['dt'], state=np.array([0., 4.5+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 8+random.uniform(-0.5,0.5)))
                     # agents.append(Agent(role='ped', cl=9, state=np.array([0., 2.+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 12+random.uniform(-0.5,0.5)))
 
                     tv_n_stds=[v.noise_std for v in agents]

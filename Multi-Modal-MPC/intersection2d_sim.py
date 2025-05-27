@@ -164,7 +164,7 @@ class Simulator():
                 self.N_modes.append(3)
             else:
                 self.ev=v
-        self.checker = Prb_check_n_cluster(all_combinations= list(product(*(range(m) for m in self.N_modes))),num_samples=50)
+        self.checker = Prb_check_n_cluster(all_combinations= list(product(*(range(m) for m in self.N_modes))),K_max = 3, num_samples=50)
 
        
 
@@ -205,8 +205,11 @@ class Simulator():
                 vh_s=self._g2f(vh_pos,cl)
                 v_s_on_vh = self._g2f(self.routes[cl](v[0]-.0)[:2].reshape((-1,1)),clh)
                 vh_psi=self.routes[clh](vh[0])[2]
+                
+                # if vh[0]>=55.0:
+                #     verbose = True
 
-                if np.abs(np.sin(float(2*psi)))<=1e-3 and vh_s-v[0]>=0. and vh_s-v[0]<=6. and self._check_out_inter(cl,v[0]) :
+                if np.abs(np.sin(float(2*psi)))<=1e-3 and vh_s-v[0]>=1. and vh_s-v[0]<=5. and self._check_out_inter(cl,v[0]) :
                     if (vh[1]>=1 and vh_s-v[0]<=10) and (1<=(v_s_on_vh - vh[0]) <= 10) and np.linalg.norm(vh_pos-v_pos)<5:
                         ds=0.01
                         dv=8
@@ -225,7 +228,7 @@ class Simulator():
                             ds = 1e5
                             dv = 0.0
 
-                elif vh_s-v[0]-6.0 < 0. and vh_s - v[0]>=.0 and np.abs(np.cos(psi-vh_psi))>=0.3:
+                elif vh_s-v[0]-5.0 < 0. and vh_s - v[0]>=1.0 and np.abs(np.cos(psi-vh_psi))>=0.3:
                     ds=max(vh_s-v[0]-6.,0.01) 
                     dv=v[1]-vh[1]*np.cos(psi-vh_psi)
                     dv+= 5. if 2*float(psi)%np.pi==0 else -5.
@@ -371,7 +374,7 @@ class Simulator():
                     idx_=set(self.tv_idxs)-set([ind])
                     v_ =[self.agents[k].traj[:,v.t] for k in idx_] + [self.ev.traj[:,v.t]]
                     cl_=[self.agents[k].cl for k in idx_] + [self.ev.cl]
-                    v_des, dv, ds= self._get_idm_params(v.traj[:,v.t], v.cl, v_, cl_, verbose)
+                    v_des, dv, ds= self._get_idm_params(v.traj[:,v.t], v.cl, v_, cl_, verbose = True)
                     a = v.clip_vel_acc(v.traj[:,v.t],v.idm(v_des, dv, ds)) 
                     v.step(a)
                 else:
@@ -452,9 +455,6 @@ class Simulator():
         '''
         N=self.N
         
-        
-        
-        
         x=self.ev.traj2d[:,self.ev.t].reshape((-1,1))+np.zeros((3,N+1))
         x_glob=self.ev.traj2d_glob[:2,self.ev.t].reshape((-1,1))+np.zeros((2, N+1))
         
@@ -468,35 +468,44 @@ class Simulator():
         Qs = [[np.identity(2) for _ in range(N)] for v in self.agents if v!=self.ev]
         Revs = [np.identity(2) for _ in range(N)]
         iSev=np.linalg.inv(self.ev.S)
-        iSev[-1,-1]+=0.3
+        # iSev[-1,-1]+=0.3
         Sev=np.linalg.inv(iSev)
         
         tv_glob_cov = [[0*np.identity(2) for _ in range(N+1)] for v in self.agents if v!=self.ev]
         tv_cov = [[0*np.identity(2) for _ in range(N+1)] for v in self.agents if v!=self.ev]
         
         for t in range(N):
-            if u_opt is None:
-                v_ =[o[i][:,t] for i in tv_list]
-                cl_=[v.cl for v in self.tvs]
-                v_des, dv, ds= self._get_idm_params(x[:,t], self.ev.cl, v_, cl_)
-                a=self.ev.clip_vel_acc(x[:,t], self.ev.idm(v_des, dv, ds))
-                theta = 0
-                control = np.array([a, theta])
+            # if u_opt is None:
+                # v_ =[o[i][:,t] for i in tv_list]
+                # cl_=[v.cl for v in self.tvs]
+                # v_des, dv, ds= self._get_idm_params(x[:,t], self.ev.cl, v_, cl_)
+                # a=self.ev.clip_vel_acc(x[:,t], self.ev.idm(v_des, dv, ds))
+                # theta = 0
+                # control = np.array([a, theta])
                 
-            else:
+            # else:
                 
-                control =u_opt[:,t].squeeze()
-
+            #     control =u_opt[:,t].squeeze()
+            v_ =[o[i][:,t] for i in tv_list]
+            cl_=[v.cl for v in self.tvs]
+            v_des, dv, ds= self._get_idm_params(x[:,t], self.ev.cl, v_, cl_)
+            a=self.ev.clip_vel_acc(x[:,t], self.ev.idm(v_des, dv, ds))
+           
+            theta = 0
+            control = np.array([float(a), theta])
+            
+           
             
             x[:,t+1]=self.ev.get_next2d(x[:,t], control)
             x_dev, y_dev, psi_dev = self.get_deviation(x[0,t+1], x[-1,t+1], control[-1])
          
-            x_glob[:,t+1:t+2]=self.routes[self.ev.cl](x[0,t+1])[:2]+ca.DM([x_dev, y_dev])
+            x_glob[:,t+1:t+2]=self.routes[self.ev.cl](x[0,t+1]+.0)[:2]+ca.DM([x_dev, y_dev])
             
             psi= self.routes[self.ev.cl](x[0,t+1])[2]
-            dx_glob[t]=ca.horzcat(self.droutes[self.ev.cl](x[0,t+1])[:2], ca.DM([-np.sin(psi), np.cos(psi)]))
+            dx_glob[t]=ca.horzcat(self.droutes[self.ev.cl](x[0,t+1]+.0)[:2], ca.DM([-np.sin(psi), np.cos(psi)]))
             
             Rev=np.array([[np.cos(psi+psi_dev), np.sin(psi+psi_dev)],[-np.sin(psi+psi_dev), np.cos(psi+psi_dev)]]).squeeze().T
+            # Rev=np.array([[np.cos(psi+psi_dev), np.sin(psi+psi_dev)],[-np.sin(psi+psi_dev), np.cos(psi+psi_dev)]]).squeeze()
             
             Revs[t] = Rev
             
@@ -520,11 +529,12 @@ class Simulator():
                 tv_glob_cov[i][t+1] = next_cov_glob
                 psi=self.routes[self.agents[i].cl](o[i][0,t+1])[2]
                 Rtv=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze().T
+                # Rtv=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze()
 
                 mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T
                 E, V =np.linalg.eigh(mat)
                 S=np.diag((E**(-0.5)+1.0)**(-2))
-                Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=12 else (1/2**2)*np.eye(2)
+                Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <12 else (1/3**2)*np.eye(2)
                 # Qs[i][t]  = Rtv.T@Rev
                 
             for i in ped_list:
@@ -543,11 +553,12 @@ class Simulator():
                 tv_glob_cov[i][t+1] = next_cov_glob
                 psi=self.routes[self.agents[i].cl](o[i][0,t+1])[2]
                 Rtv=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze().T
+                # Rtv=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze()
 
                 mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T
                 E, V =np.linalg.eigh(mat)
                 S=np.diag((E**(-0.5)+1.2)**(-2))
-                Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev #if t <=12 else (1/0.1**2)*np.eye(2)
+                Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=5 else (1/0.1**2)*np.eye(2)
                 # Qs[i][t]  = Rtv.T@Rev
                 
         mm_o      = [[copy.deepcopy(o[i]) for _ in range(self.n_modes[i])] for i,v in enumerate(self.agents) if v!=self.ev]
@@ -597,10 +608,11 @@ class Simulator():
                         mm_u_tvs[i][n][0,t]=a
                         psi=self.routes[j](mm_o[i][n][0,t+1])[2]
                         Rtv=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze().T
+                        # Rtv=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze()
                         mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T 
                         E, V =np.linalg.eigh(mat)
                         S=np.diag((E**(-0.5)+1.0)**(-2))
-                        mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev #if t <=12 else (1/2**2)*np.eye(2)
+                        mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=12 else (1/3**2)*np.eye(2)
                         # mm_Qs[i][n][t]  = Rtv.T@Rev
                         
         for i in ped_list:
@@ -635,10 +647,11 @@ class Simulator():
                         mm_u_tvs[i][n][0,t]=a
                         psi=self.routes[j](mm_o[i][n][0,t+1])[2]
                         Rtv=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze().T
+                        # Rtv=np.array([[np.cos(psi), np.sin(psi)],[-np.sin(psi), np.cos(psi)]]).squeeze()
                         mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T 
                         E, V =np.linalg.eigh(mat)
                         S=np.diag((E**(-0.5)+1.2)**(-2))
-                        mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=12 else (1/0.1**2)*np.eye(2)
+                        mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=3 else (1/0.1**2)*np.eye(2)
                         # mm_Qs[i][n][t]  = Rtv.T@Rev
 
         return x, x_glob, dx_glob, mm_o_glob, mm_u_tvs, mm_routes, mm_droutes, mm_Qs, Revs, mm_tv_cov, mm_tv_glob_cov
@@ -720,7 +733,7 @@ class Simulator():
         x_f= lambda t :  8.5 + 15*np.sin(t)
         y_f= lambda t :  15 - 15*np.cos(t)
         s=np.hstack((np.array([0, 58.5]), 58.501 + 15.*thet, np.array([58.502+15.*np.pi/2, 58.5 + 15.*np.pi/2+25])))
-        vs=np.hstack((np.array([10., 7.]), 6. + 0.*thet, np.array([6., 8.])))
+        vs=np.hstack((np.array([10., 7.]), 7. + 0.*thet, np.array([7., 8.])))
         x_l=np.hstack((np.array([-50.,7.5]),x_f(thet), np.array([23.5, 23.5])))
         y_l=np.hstack((np.array([0.,0.]), y_f(thet), np.array([15, 40.])))
 
@@ -743,7 +756,7 @@ class Simulator():
         x_l=np.hstack((np.array([60.,31.]), x_f(thet), np.array([23.5, 23.5])))
         y_l=np.hstack((np.array([15.,15.]), y_f(thet), np.array([22.5, 40.])))
         psis=np.hstack((np.array([np.pi, np.pi]), np.pi-thet, 0.5*np.array([np.pi, np.pi])))
-        vs=np.hstack((np.array([8, 4.8]), 4.8 + 0.*thet, np.array([4.8, 8])))
+        vs=np.hstack((np.array([8, 5.5]), 5.5 + 0.*thet, np.array([5.5, 8])))
         r_fun=_make_ca_fun(s, x_l, y_l, psis,vs)
         rights.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -755,9 +768,9 @@ class Simulator():
         # 5 : W->E (run)
         s=np.array([0,31])
         xs=np.array((1,32))
-        ys=np.array((24,24))
+        ys=np.array((26,26))
         psis=np.array((np.pi, np.pi))
-        vs=np.array([4.5, .0])
+        vs=np.array([3, .0])
         r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -768,9 +781,9 @@ class Simulator():
         # 6 : W->E (walk)
         s=np.array([0,31])
         xs=np.array((1,32))
-        ys=np.array((24,24))
+        ys=np.array((26,26))
         psis=np.array((np.pi, np.pi))
-        vs=np.array([2., 0.])
+        vs=np.array([1.5, 0.])
         r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -781,9 +794,9 @@ class Simulator():
         # 7 : W->E (yield)
         s=np.array([0,1])
         xs=np.array((1,2))
-        ys=np.array((24,24))
+        ys=np.array((26,26))
         psis=np.array((np.pi, np.pi))
-        vs=np.array([0.5, 0])
+        vs=np.array([0.2, 0])
         r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -795,9 +808,9 @@ class Simulator():
         # 8 : E->W (run)
         s=np.array([0,31])
         xs=np.array((1,32))
-        ys=np.array((24,24))
+        ys=np.array((26,26))
         psis=np.array((np.pi, np.pi))
-        vs=np.array([4.5, .0])
+        vs=np.array([3, .0])
         r_fun=_make_ca_fun(s,xs[::-1],ys-1.0, psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -806,7 +819,7 @@ class Simulator():
         self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
         
         # 9 : E->W (walk)
-        vs=np.array([2., 0.])
+        vs=np.array([1.5, 0.])
         r_fun=_make_ca_fun(s,xs[::-1],ys-1., psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -817,7 +830,7 @@ class Simulator():
         # 10 : E->W (yield)
         s=np.array([0,1])
         xs=np.array((31,32))
-        vs=np.array([0.5, 0])
+        vs=np.array([0.2, 0])
         r_fun=_make_ca_fun(s,xs[::-1],ys-1., psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))

@@ -24,7 +24,7 @@ class MM_MPC_TI(MPC_Base):
         x_{i|t}= state prediction of kth vehicle at time step i, given current time t
         """ 
         
-        v_sched = lambda v_x : 0.2 if v_x < 2 else 2.5
+        v_sched = lambda v_x : 0.2 if v_x < 2 else 2
   
 
         E = 0.001*ca.DM.eye(3)
@@ -101,9 +101,19 @@ class MM_MPC_TI(MPC_Base):
     def run_single_mpc(self, agent_id, update_dict):
         # casadi parameters
         # if self.linearized_ca:
-        # opti = ca.Opti('conic')
+        opti = ca.Opti('conic')
         # else:
-        opti = ca.Opti()
+        # opti = ca.Opti()
+        # opts_setting = {'ipopt.max_iter': 100000, 'ipopt.print_level': 0, 'print_time': 0,
+        #                     'ipopt.acceptable_tol': 1e-5, 'ipopt.acceptable_obj_change_tol': 1e-4, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9, 'ipopt.max_cpu_time' : 10.0,
+        #                     'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
+        # opts_setting = {'ipopt.max_iter':500,  'ipopt.print_level': 0, 'print_time': 0, 'ipopt.warm_start_init_point': 'yes', 'ipopt.acceptable_tol': 1e-4, 'ipopt.acceptable_obj_change_tol': 1e-3, 'ipopt.max_cpu_time' : 30.0}
+        
+        # opti.minimize(total_cost)
+
+        # opti.solver('ipopt', opts_setting)
+        opti.solver('proxqp', {}, {'verbose':False, 'max_iter':1000})
+        # opti.solver('proxqp', {}, {'verbose':False})
 
         current_state = update_dict['x0']
         x_lin         = update_dict['z_lin']
@@ -123,7 +133,7 @@ class MM_MPC_TI(MPC_Base):
             clusters = update_dict['clusters']
             num_modes = len(clusters)
             scene_modes = num_modes
-            print('Doing SM-MPC')
+            print(f'Doing SM-MPC with clusters: {clusters}')
         else:
             clusters = None
             num_modes = self.num_modes
@@ -137,17 +147,22 @@ class MM_MPC_TI(MPC_Base):
                 return reduce(lambda x,y : x+y, [opt_bias_mm[k][j] for k in range(n_obs)])
         
         rob_u = opti.variable(self.N, 2)
-        
+        num_dec_var = 2*self.N
+        num_constr = 0
         # h[j] = h_b + sum_{obst}h[k][j]  for MM, J= scene_mode, for SM, j = cluster index
         opt_bias_mm  = [[opti.variable(self.N-self.robust_horizon,2) for _ in range(num_modes)] for _ in range(n_obs)]
 
         opt_controls = [rob_u+ca.vertcat(ca.DM(self.robust_horizon,2), _get_mm_bias(j)) for j in range(scene_modes)]
-         
+        
+        num_dec_var+= n_obs*(self.N-self.robust_horizon)*2 
+        print(f"Decision variables after declaring bias terms: {num_dec_var}")
+              
         # opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(self.num_modes)]
         # obca_lmbd    = [[opti.variable(4,self.N-1) for _ in range(self.num_modes)] for _ in range(n_obs)]  
         A_rob, B_rob, E_rob = [], [], []
         slack = opti.variable(1)
         opt_states, opt_x, opt_y, v, a, ey  = [], [], [], [], [], []
+        num_dec_var+=1
         A, B, E = self._get_robot_ATV_dynamics(x_lin)    
         for j in range(scene_modes):
             # if np.linalg.norm(self.prev_states[agent_id][j])>1e-2:
@@ -176,7 +191,7 @@ class MM_MPC_TI(MPC_Base):
         # opt_x0 = opti.parameter(3)
         opt_xs = opti.parameter(3)
         # self.opt_epsilon_r.append(self.opti.variable(self.N+1, 1))
-
+       
         # define the cost function
         robot_cost = 0  # cost
     
@@ -195,10 +210,12 @@ class MM_MPC_TI(MPC_Base):
                 # if k > self.robust_horizon:
                 # robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]-opt_xs.T), Q, (opt_states[j][k, :]-opt_xs.T).T] 
                 #             )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) + 100000 * opt_epsilon_r[j][k]) #+ 100000 * opt_epsilon_o[k]
-                robot_cost = robot_cost + mode_weight*(-4.*opt_states[j][k,0]
-                    + 0.1*ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) ) #+ 100000 * opt_epsilon_r[j][k]) 
+                robot_cost = robot_cost + mode_weight*(-10*opt_states[j][k,0]
+                    + .001*ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) ) #+ 100000 * opt_epsilon_r[j][k]) 
                 if k>0:
-                    robot_cost+= 10*mode_weight*(opt_controls[j][k-1,:]-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
+                    robot_cost+= 100*mode_weight*(opt_controls[j][k-1,:]-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
+                    # robot_cost+= 1*mode_weight*(opt_states[j][k-1,2] - opt_states[j][k,2])**2
+                    
                 # else:
                 #     new_ref = ref[k, :].reshape((3,1))
                 #     robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]- new_ref.T), Q, (opt_states[j][k, :]-new_ref.T).T] 
@@ -215,13 +232,15 @@ class MM_MPC_TI(MPC_Base):
             # boundrary and control conditions
             # opti.subject_to(opti.bounded(-1.0, opt_x[j], 1.0))
             # opti.subject_to(opti.bounded(-5, opt_y[j], 5))
-            opti.subject_to(opti.bounded(-1, v[j], 7))#self.v_lim))
-            opti.subject_to(opti.bounded(-5, a[j], 3))
+            opti.subject_to(opti.bounded(-1, v[j], 6))#self.v_lim))
+            opti.subject_to(opti.bounded(-8, a[j], 3))
             opti.subject_to(opti.bounded(-2.5, ey[j], 2.5))
-      
-        opti.subject_to(opti.bounded(0,slack,0.5))
             
-        total_cost = robot_cost + 100000*slack**2
+            num_constr+= 3*self.N*2
+      
+        opti.subject_to(opti.bounded(0,slack,.2))
+        num_constr+=2
+        total_cost = robot_cost + 1000*slack**2
         
         ##### Get chance constraints from the given GMM prediction
         ## aij = (pi - pj) / ||pi - pj|| and bij = ri + rj 
@@ -230,9 +249,12 @@ class MM_MPC_TI(MPC_Base):
 
         if self.feedback:
             K_rob_horizon = [opti.variable(2,2) for t in range(self.robust_horizon-1)]
+            num_dec_var+= (self.robust_horizon-1)*2*2
+            print(f"Decision variables after declaring robust policy terms: {num_dec_var}")
+            
         else:
             K_rob_horizon = [ca.DM(2,2) for t in range(self.robust_horizon-1)]
-        if clusters is None:
+        if clusters is None or 'SM-MPC' not in self.scenario:
             pol_gains = []
             T_obs, c_obs, E_obs=[], [], []  
             
@@ -249,6 +271,7 @@ class MM_MPC_TI(MPC_Base):
 
                     if self.feedback:
                         K = K_rob_horizon+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
+                        num_dec_var+= (self.N-self.robust_horizon)*2*2
                     else:
                         K = K_rob_horizon+[ca.DM(2,2) for t in range(self.N-self.robust_horizon)]
                     
@@ -276,42 +299,69 @@ class MM_MPC_TI(MPC_Base):
             T_obs, c_obs, E_obs={k: {mode :  None for mode, _ in enumerate(agent_prediction)} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))},\
                                 {k: {mode :  None for mode, _ in enumerate(agent_prediction)} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))},\
                                 {k: {mode :  None for mode, _ in enumerate(agent_prediction)} for k, agent_prediction in enumerate(zip(gmm_predictions_vector))}
-            for j, cluster in enumerate(clusters):
+            
+            # clusters = [[], []]
+            # u = h + K(o1 + o2)         (agnostic to everyting)
+            # u = h + K1o1 + K2o2   (agnostic to modes, but reactive to individual obstacle)
+            # Scene modes
+            # [(0, 0), (1,0), (2,0), (0,1), (0,2), (1,1), (1,2), (2,1), (2,2)]
+            # num_K = n_obs*xy_dim*num_mode*(N-robust) (simplified MM without joint reasoning)
+            # num_K = xy_dim*n_obs*(N-robust)*num_modes**(n_obs) (true MM with joint reasoning)
+            
+            
+            
+            # Clusters
+            # C1: [(0,0), (1, 0), (2, 0)],   C2: [(0,1), (0,2), (1,1), (1,2), (2,1), (2,2)]
+            #   K_1 [n_obs*xy_dim*(N-robust)]          K_2 [n_obs*xy_dim*(N-robust)]
+            
+            # given C clusters,
+            # decision var comparison:   C*n_obs*xy_dim*(N-robust) vs n_obs*xy_dim*num_mode*(N-robust)
+            for j, cluster in enumerate(clusters):   #cluster= [(0,0), (1, 0)]
+                # print(f"Cluster {j} : {cluster}")
                 for scen in cluster:
                     for k in range(n_obs):
+                        if self.feedback:
+                            if pol_gains[k][j] is None:
+                                K = K_rob_horizon+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
+                                K_stack=ca.diagcat(ca.DM(2,2),*[K[t] for t in range(self.N-1)]) 
+                                num_dec_var+= (self.N-self.robust_horizon)*2*2
+                            else:
+                                K_stack = pol_gains[k][j]
+                                
+                            
+                        else:
+                            K = K_rob_horizon+[ca.DM(2,2) for t in range(self.N-self.robust_horizon)]
+                            K_stack=ca.diagcat(ca.DM(2,2),*[K[t] for t in range(self.N-1)]) 
                         
                         u_tv = mm_tv_u[k][scen[k]]
                         prediction = mm_tv_pred[k][scen[k]]
-                        
-                        if self.feedback:
-                            K = K_rob_horizon+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
-                        else:
-                            K = K_rob_horizon+[ca.DM(2,2) for t in range(self.N-self.robust_horizon)]
+                    
                         covariances = ca.diag(noise_chars[k])
-                        K_stack=ca.diagcat(ca.DM(2,2),*[K[t] for t in range(self.N-1)]) 
+                        
                         obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
                         obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
             
-                        total_cost+= 100*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
+                        total_cost+= 10*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
                         
                         pol_gains[k][j] = K_stack
-                      
+                        
                         T_o, c_o, E_o= self._get_obs_ATV_dynamics(u_tv, noise_chars[k])
                         
                         T_obs[k][scen[k]], c_obs[k][scen[k]], E_obs[k][scen[k]] = T_o, c_o, E_o
-                        
-                        total_cost+= 100*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
-                        
-                    
-                
+    
                 
         x_pos = update_dict['x_pos']
         Qs = update_dict['Qs']
         dpos = update_dict['dpos']
         dpos_tvs = update_dict['droutes']
-        
+        print(f"Decision variables after declaring mm policy terms: {num_dec_var}")
         r_fun =update_dict['route_fun']
-        if clusters is None:
+        # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+        # print("EV PRED: ", x_pos)
+        # print("TV PRED: ", gmm_predictions_vector[0][0])
+        # print("Dist :", np.linalg.norm(x_pos[:,1:]-gmm_predictions_vector[0][0][:,1:], axis = 0))
+        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+        if clusters is None or 'SM-MPC' not in self.scenario:
             for k, agent_prediction in enumerate(gmm_predictions_vector):
                 for j, prediction in enumerate(agent_prediction):
                     # print("Jacobians", "Ev", dpos, "Tv", dpos_tvs[k][j])
@@ -333,17 +383,21 @@ class MM_MPC_TI(MPC_Base):
                         #     #     lmbd_l = 0.1*ca.DM.ones(4,1)+lmbd_l
                         # else:
                         #     lmbd_l = 0.1*ca.DM.ones(4,1)
-                        oa_ref=prediction[:,t]
+                        # oa_ref=prediction[:,t]
                         
                         
                         # oa_ref+=(x_pos[:,t]-self.pos_tvs[k][m][:,t])/((self.x_pos[:,t]-self.pos_tvs[k][m][:,t]).T@self.Qs[k][m][t-1]@(self.x_pos[:,t]-self.pos_tvs[k][m][:,t]))**(0.5)
-                        oa_ref+=(x_pos[:,t]-oa_ref)/((x_pos[:,t]-oa_ref).T@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref))**(0.5)
-                        
-                        
+                        oa_ref=prediction[:,t]+(x_pos[:,t]-prediction[:,t])/\
+                            ((x_pos[:,t]-prediction[:,t]).T@Qs[k][j][t-1]@(x_pos[:,t]-prediction[:,t]))**(0.5)
+                        # if j == 0 and k == 0 :
+                        #     print(oa_ref)
                         # Coefficient of random variables in affine chance constraint
-                        for m in range( self.num_modes**n_obs,1):
+                        for m in range( self.num_modes**n_obs):
+                            # print(f"Scenario {m}, Obstacle {k}, Time {t} ")
                             if mode_map((m,k))!=j:
                                 continue
+                            # if t==1:
+                            #     print(f"Scenario {m}, Obstacle {k}, Time {t}, Obstacle mode {j} ")
                             # else:
                             # ey  = A[3*(t+1)-1,:]@ca.DM(current_state)+B[3*(t+1)-1,:]@ca.vec(opt_controls[m].T)
                             # pos_dev = ca.vertcat(-ey*ca.sin(psi), ey*ca.cos(psi)) 
@@ -364,16 +418,20 @@ class MM_MPC_TI(MPC_Base):
                         
                             opti.subject_to(rv_dist@rv_dist.T<=(nom_dist+slack)**2)
                             opti.subject_to(nom_dist>=-slack)
+                            # opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
+                            # opti.subject_to(nom_dist>=-0)
+                            num_constr+= 2
         else:
             for j, cluster in enumerate(clusters):
-                print(cluster)
-                for scen in cluster:
+                for s_idx, scen in enumerate(cluster):
                     for k in range(n_obs):
                         u_tv = mm_tv_u[k][scen[k]]
                         prediction = mm_tv_pred[k][scen[k]]
                         for t in range(1,self.N,1):
+                            # if t==1:
+                            #     print(f"Cluster {j}, Scenario {s_idx}, Obstacle {k}, Time {t} ")
                             oa_ref=prediction[:,t]
-                            oa_ref+=(x_pos[:,t]-oa_ref)/((x_pos[:,t]-oa_ref).T@Qs[k][scen[k]][t-1]@(x_pos[:,t]-oa_ref))**(0.5)
+                            oa_ref+=(x_pos[:,t]-oa_ref)/((x_pos[:,t]-oa_ref).T@Qs[k][scen[k]][t-1]@(x_pos[:,t ]-oa_ref))**(0.5)
                             
                             lin_dist = (oa_ref-prediction[:,t]).T
                             noise_coeff = ca.horzcat(dpos[t-1]@(E[3*t:3*(t+1):2,:]),*[dpos[t-1]@B[3*t:3*(t+1):2,:]@pol_gains[l][j]@E_obs[l][scen[l]][:2*self.N,:]-int(l==k)*(dpos_tvs[k][scen[k]][t-1]@E_obs[k][scen[k]][2*t,:]) for l in range(n_obs)])
@@ -383,7 +441,8 @@ class MM_MPC_TI(MPC_Base):
                             nom_dist=lin_dist@Qs[k][scen[k]][t-1]@(x_pos[:,t].T+dx-oa_ref)
                             opti.subject_to(rv_dist@rv_dist.T<=(nom_dist+slack)**2)
                             opti.subject_to(nom_dist>=-slack)
-                
+
+                            num_constr+=2
                         # soc = ca.soc(rv_dist, nom_dist)
                         # opti.subject_to(soc>0)
                         # if self.linearized_ca:
@@ -421,22 +480,16 @@ class MM_MPC_TI(MPC_Base):
                         # opti.subject_to(lmbd>=0)
                         # opti.subject_to(lmbd.T@A_m@A_m.T@lmbd <=1+slack)
                         
-        opts_setting = {'ipopt.max_iter': 1000, 'ipopt.print_level': 0, 'print_time': 0,
-                            'ipopt.acceptable_tol': 1e-5, 'ipopt.acceptable_obj_change_tol': 1e-4, 'ipopt.warm_start_init_point': 'yes', 'ipopt.warm_start_bound_push': 1e-9, 'ipopt.max_cpu_time' : 10.0,
-                            'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
-        # opts_setting = {'ipopt.max_iter':500,  'ipopt.print_level': 0, 'print_time': 0, 'ipopt.warm_start_init_point': 'yes', 'ipopt.acceptable_tol': 1e-4, 'ipopt.acceptable_obj_change_tol': 1e-3, 'ipopt.max_cpu_time' : 30.0}
         
-        # opti.minimize(total_cost)
+        # num_decision_vars = opti.nx
+        # print(num_decision_vars)
 
-        opti.solver('ipopt', opts_setting)
-        num_decision_vars = opti.nx
-        print(num_decision_vars)
-
-        num_constraints = opti.ng
-        print(num_constraints)
-
+        # num_constraints = opti.ng
+        # print(num_constraints)
+        
         # if self.linearized_ca:
-        # opti.solver('proxqp', {}, {'verbose':False})
+        
+        # opti.solver('osqp', {}, {'verbose':False})
         # else:
         #     opti.solver('ipopt', opts_setting)
             
@@ -460,13 +513,15 @@ class MM_MPC_TI(MPC_Base):
 
         u_res = None
         next_states_pred = None
+        
+        print(f"#constraints : {num_constr} and #decision_vars : {num_dec_var}")
 
         try:     
             # solve the optimization problem
             t_ = time.time()
            
-            sol = opti.solve_limited()
-            
+            sol = opti.solve()
+            # print(sol)
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
             
@@ -557,9 +612,9 @@ class MM_MPC_TI(MPC_Base):
 
                     self.infeasible_count += 1
                     self.infeasible = True
-                    u = [np.hstack([-2*np.ones((self.N, 1)), np.zeros((self.N,1))])]
+                    u = [np.hstack([-5*np.ones((self.N, 1)), np.zeros((self.N,1))])]
                     current_state = Sim.ev.traj[:,Sim.t]
-                    Sim.step(np.array([-2.0, 0]))
+                    Sim.step(np.array([-5.0, 0]))
                     next_state = Sim.ev.traj[:,Sim.t]
 
                     self.prediction_cache[agent_id] = next_states_pred
@@ -576,8 +631,12 @@ class MM_MPC_TI(MPC_Base):
                     self.control_cache[agent_id].append(u[0][0,:])
                     self.current_state[agent_id] = next_state
                     self.state_cache[agent_id].append(next_state)
-                    
-                print("Agent state: ", Sim.ev.traj[:,Sim.t], " Agent control: ", u[0])
+                
+                print("Agent state: ", Sim.ev.traj[:,Sim.t], " Agent control: ", u[0].T)
+                print("Agent pos: ", Sim.ev.traj_glob[:,Sim.t-1])
+                print("TV pos: ", Sim.tvs[0].traj_glob[:, Sim.t-1])
+                print("Ped pos: ", Sim.peds[0].traj_glob[:, Sim.t-1])
+                # print(f"")
             self.num_timestep += 1
             time_2 = time.time()
             self.avg_comp_time.append(time_2-time_1)

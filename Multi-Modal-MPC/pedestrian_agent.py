@@ -96,7 +96,7 @@ class Agent():
         if self.role!="ped":
             self.veh_dims= np.array([2.8, 1.5])
         else:
-            self.veh_dims= np.array([0.5, 0.5])
+            self.veh_dims= np.array([0.2, 0.1])
             self.s_decision = s_dec
         self.S=np.diag(self.veh_dims**(-1.0))
         self.vB=pc.box2poly([[-self.veh_dims[0], self.veh_dims[0]],[-self.veh_dims[1],self.veh_dims[1]]])
@@ -164,7 +164,7 @@ class Agent2D():
                  state=np.array([0., 7., 0]), #s, y, v_x
                  noise_std=[0.01, 0.01],
                  T_max=1000,
-                 A_max=5, 
+                 A_max=3, 
                  s_dec = 20
                  ):
         self.role=role
@@ -184,7 +184,7 @@ class Agent2D():
         self.traj[:,0]=state[:2]
         self.traj2d[:,0] = state
         self.t=0
-        v_sched = lambda v_x : 0.2 if v_x < 2 else 2.5
+        v_sched = lambda v_x : 0.2 if v_x < 2 else 2.
             
         self.A=np.array([[1., self.dt], [0., 1.]])
         self.B=np.array([0.5*self.dt**2,self.dt])
@@ -195,7 +195,7 @@ class Agent2D():
         if self.role!="ped":
             self.veh_dims= np.array([2.8, 1.5])
         else:
-            self.veh_dims= np.array([0.3, 0.3])
+            self.veh_dims= np.array([0.2, 0.1])
             self.s_decision = s_dec
         self.S=np.diag(self.veh_dims**(-1.0))
         self.vB=pc.box2poly([[-self.veh_dims[0], self.veh_dims[0]],[-self.veh_dims[1],self.veh_dims[1]]])
@@ -228,7 +228,7 @@ class Agent2D():
         
     def clip_vel_acc(self, state, a,verbose=False):
         curr_vel = state[1]
-        next_vel = max(self.A[1,:]@state+self.B[1]*self.strip_list(a), -0.1)
+        next_vel = max(self.A[1,:]@state[:2]+self.B[1]*self.strip_list(a), -0.1)
         eff_a    = (next_vel-curr_vel)/self.dt
         if verbose:
             print(f'v_cur: {curr_vel}, v_next: {next_vel}, a: {a}, a_eff: {eff_a}')
