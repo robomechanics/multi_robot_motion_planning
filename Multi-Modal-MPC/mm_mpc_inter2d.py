@@ -112,7 +112,8 @@ class MM_MPC_TI(MPC_Base):
         # opti.minimize(total_cost)
 
         # opti.solver('ipopt', opts_setting)
-        opti.solver('proxqp', {}, {'verbose':False, 'max_iter':500})
+        # opti.solver('proxqp', {}, {'verbose':False, 'max_iter':500})
+        opti.solver('gurobi', {}, {'verbose':False})
         # opti.solver('proxqp', {}, {'verbose':False})
 
         current_state = update_dict['x0']
@@ -217,23 +218,7 @@ class MM_MPC_TI(MPC_Base):
                     robot_cost+= 100*mode_weight*(opt_controls[j][k-1,:]-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
                     # robot_cost+= 1*mode_weight*(opt_states[j][k-1,2] - opt_states[j][k,2])**2
                     
-                # else:
-                #     new_ref = ref[k, :].reshape((3,1))
-                #     robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]- new_ref.T), Q, (opt_states[j][k, :]-new_ref.T).T] 
-                #                 )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T])) #+ 100000 * opt_epsilon_r[j][k]) 
-            
-                # for obs in self.static_obs:
-                #     obs_x = obs[0]
-                #     obs_y = obs[1]
-                #     obs_dia = obs[2]
-                    
-                #     rob_obs_constraints_ = ca.sqrt((opt_states[k, 0]-obs_x)**2+(opt_states[k, 1]-obs_y)**2)-obs_dia/2 - self.rob_dia/2 - self.safety_margin #+ opt_epsilon_o[l]
-                #     opti.subject_to(rob_obs_constraints_ >= 0)
-            
-            # boundrary and control conditions
-            # opti.subject_to(opti.bounded(-1.0, opt_x[j], 1.0))
-            # opti.subject_to(opti.bounded(-5, opt_y[j], 5))
-            opti.subject_to(opti.bounded(-1, v[j], 6))#self.v_lim))
+                opti.subject_to(opti.bounded(-1, v[j], 6))#self.v_lim))
             opti.subject_to(opti.bounded(-8, a[j], 3))
             opti.subject_to(opti.bounded(-2.5, ey[j], 2.5))
             
