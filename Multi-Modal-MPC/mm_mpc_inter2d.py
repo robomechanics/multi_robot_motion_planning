@@ -112,7 +112,7 @@ class MM_MPC_TI(MPC_Base):
         # opti.minimize(total_cost)
 
         # opti.solver('ipopt', opts_setting)
-        opti.solver('proxqp', {}, {'verbose':False, 'max_iter':1000})
+        opti.solver('proxqp', {}, {'verbose':False, 'max_iter':500})
         # opti.solver('proxqp', {}, {'verbose':False})
 
         current_state = update_dict['x0']
@@ -155,7 +155,7 @@ class MM_MPC_TI(MPC_Base):
         opt_controls = [rob_u+ca.vertcat(ca.DM(self.robust_horizon,2), _get_mm_bias(j)) for j in range(scene_modes)]
         
         num_dec_var+= n_obs*(self.N-self.robust_horizon)*2 
-        print(f"Decision variables after declaring bias terms: {num_dec_var}")
+        # print(f"Decision variables after declaring bias terms: {num_dec_var}")
               
         # opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(self.num_modes)]
         # obca_lmbd    = [[opti.variable(4,self.N-1) for _ in range(self.num_modes)] for _ in range(n_obs)]  
@@ -173,11 +173,12 @@ class MM_MPC_TI(MPC_Base):
             opt_states.append(ca.vec(A@ca.DM(current_state)+B@ca.vec(opt_controls[j].T)).reshape((-1,self.N+1)).T)
 
             # import pdb; pdb.set_trace()
-            x_pos = update_dict['x_pos']
-            d_pos = update_dict['dpos']
-            x_traj = ca.vec(x_pos)+ ca.vertcat(ca.DM(2,1),ca.vec(ca.diagcat(*d_pos)@ca.vec(opt_states[-1][1:,0::2])))
-            opt_x.append(x_traj.reshape((2,-1))[0,:])
-            opt_y.append(x_traj.reshape((2,-1))[1,:])
+            ev_global_pos = update_dict['x_pos']
+            jac_ev_pos = update_dict['dpos']
+            ev_glob_pos_traj = ca.vec(ev_global_pos)+ \
+                ca.vertcat(ca.DM(2,1),ca.vec(ca.diagcat(*jac_ev_pos)@ca.vec(opt_states[-1][1:,0::2])))
+            opt_x.append(ev_glob_pos_traj.reshape((2,-1))[0,:])
+            opt_y.append(ev_glob_pos_traj.reshape((2,-1))[1,:])
             v.append(opt_states[-1][:,1])
             a.append(opt_controls[j])
             ey.append(opt_states[-1][:,-1])
@@ -250,7 +251,7 @@ class MM_MPC_TI(MPC_Base):
         if self.feedback:
             K_rob_horizon = [opti.variable(2,2) for t in range(self.robust_horizon-1)]
             num_dec_var+= (self.robust_horizon-1)*2*2
-            print(f"Decision variables after declaring robust policy terms: {num_dec_var}")
+            # print(f"Decision variables after declaring robust policy terms: {num_dec_var}")
             
         else:
             K_rob_horizon = [ca.DM(2,2) for t in range(self.robust_horizon-1)]
@@ -341,7 +342,7 @@ class MM_MPC_TI(MPC_Base):
                         obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
                         obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
             
-                        total_cost+= 10*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
+                        total_cost+= 100*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
                         
                         pol_gains[k][j] = K_stack
                         
@@ -350,27 +351,27 @@ class MM_MPC_TI(MPC_Base):
                         T_obs[k][scen[k]], c_obs[k][scen[k]], E_obs[k][scen[k]] = T_o, c_o, E_o
     
                 
-        x_pos = update_dict['x_pos']
-        Qs = update_dict['Qs']
-        dpos = update_dict['dpos']
-        dpos_tvs = update_dict['droutes']
-        print(f"Decision variables after declaring mm policy terms: {num_dec_var}")
+        ev_global_pos = update_dict['x_pos']
+        agg_Q = update_dict['Qs']
+        jac_ev_pos = update_dict['dpos']
+        jac_tv_pos = update_dict['droutes']
+        # print(f"Decision variables after declaring mm policy terms: {num_dec_var}")
         r_fun =update_dict['route_fun']
         # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-        # print("EV PRED: ", x_pos)
+        # print("EV PRED: ", ev_global_pos)
         # print("TV PRED: ", gmm_predictions_vector[0][0])
-        # print("Dist :", np.linalg.norm(x_pos[:,1:]-gmm_predictions_vector[0][0][:,1:], axis = 0))
+        # print("Dist :", np.linalg.norm(ev_global_pos[:,1:]-gmm_predictions_vector[0][0][:,1:], axis = 0))
         print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
         if clusters is None or 'SM-MPC' not in self.scenario:
             for k, agent_prediction in enumerate(gmm_predictions_vector):
                 for j, prediction in enumerate(agent_prediction):
-                    # print("Jacobians", "Ev", dpos, "Tv", dpos_tvs[k][j])
-                    # print("Positions","TV", prediction,  "EV", x_pos)
+                    # print("Jacobians", "Ev", dpos, "Tv", jac_tv_pos[k][j])
+                    # print("Positions","TV", prediction,  "EV", ev_global_pos)
                     for t in range(1,self.N,1):
                         
-                        # A_m = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Qs[k][j][t-1]
+                        # A_m = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@agg_Q[k][j][t-1]
                         
-                        # Rtv   =  Revs[t]@Qs[k][j][t-1].T
+                        # Rtv   =  Revs[t]@agg_Q[k][j][t-1].T
                         # A_m_b = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Rtv.T
                         # b_m = ca.DM([obs_dims[k][0]+0.75, obs_dims[k][0]+0.75, obs_dims[k][1]+0.5, obs_dims[k][1]+0.5]) + A_m_b@prediction[:,t]
                         # lmbd = obca_lmbd[k][j][:,t-1]
@@ -383,65 +384,78 @@ class MM_MPC_TI(MPC_Base):
                         #     #     lmbd_l = 0.1*ca.DM.ones(4,1)+lmbd_l
                         # else:
                         #     lmbd_l = 0.1*ca.DM.ones(4,1)
-                        # oa_ref=prediction[:,t]
+                        # obs_avoid_lin_ref=prediction[:,t]
                         
                         
-                        # oa_ref+=(x_pos[:,t]-self.pos_tvs[k][m][:,t])/((self.x_pos[:,t]-self.pos_tvs[k][m][:,t]).T@self.Qs[k][m][t-1]@(self.x_pos[:,t]-self.pos_tvs[k][m][:,t]))**(0.5)
-                        oa_ref=prediction[:,t]+(x_pos[:,t]-prediction[:,t])/\
-                            ((x_pos[:,t]-prediction[:,t]).T@Qs[k][j][t-1]@(x_pos[:,t]-prediction[:,t]))**(0.5)
+                        # obs_avoid_lin_ref+=(ev_global_pos[:,t]-self.pos_tvs[k][m][:,t])/((self.ev_global_pos[:,t]-self.pos_tvs[k][m][:,t]).T@self.agg_Q[k][m][t-1]@(self.ev_global_pos[:,t]-self.pos_tvs[k][m][:,t]))**(0.5)
+                        obs_avoid_lin_ref=prediction[:,t]+(ev_global_pos[:,t]-prediction[:,t])/\
+                            ((ev_global_pos[:,t]-prediction[:,t]).T@agg_Q[k][j][t-1]@(ev_global_pos[:,t]-prediction[:,t]))**(0.5)
                         # if j == 0 and k == 0 :
-                        #     print(oa_ref)
+                        #     print(obs_avoid_lin_ref)
                         # Coefficient of random variables in affine chance constraint
                         for m in range( self.num_modes**n_obs):
                             # print(f"Scenario {m}, Obstacle {k}, Time {t} ")
                             if mode_map((m,k))!=j:
                                 continue
                             # if t==1:
-                            #     print(f"Scenario {m}, Obstacle {k}, Time {t}, Obstacle mode {j} ")
+                            #     print(f"Scenario { m}, Obstacle {k}, Time {t}, Obstacle mode {j} ")
                             # else:
                             # ey  = A[3*(t+1)-1,:]@ca.DM(current_state)+B[3*(t+1)-1,:]@ca.vec(opt_controls[m].T)
                             # pos_dev = ca.vertcat(-ey*ca.sin(psi), ey*ca.cos(psi)) 
-                            lin_dist = (oa_ref-prediction[:,t]).T
-                            # # print(f" time:{t} linearized relative displacement:", lin_dist, "ev position proj", oa_ref, "tv position", prediction[:,t])
-                            noise_coeff = ca.horzcat(dpos[t-1]@(E[3*t:3*(t+1):2,:]),*[dpos[t-1]@B[3*t:3*(t+1):2,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*(dpos_tvs[k][j][t-1]@E_obs[k][j][2*t,:]) for l in range(self.n_obs)])
-                            # noise_coeff_const = ca.horzcat(dpos[t-1].T@(E[3*t:3*(t+1):2,:]),*[0*dpos[t-1]@B[2*t,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*dpos_tvs[k][j][t-1]@E_obs[k][j][2*t,:] for l in range(self.n_obs)])
-                            rv_dist=sp.erfinv(1-self.delta)*(lin_dist@Qs[k][j][t-1]@noise_coeff)
+                            lin_dist = (obs_avoid_lin_ref-prediction[:,t]).T
+                            # # print(f" time:{t} linearized relative displacement:", lin_dist, "ev position proj", obs_avoid_lin_ref, "tv position", prediction[:,t])
+                            noise_coeff = ca.horzcat(jac_ev_pos[t-1]@(E[3*t:3*(t+1):2,:]),*[jac_ev_pos[t-1]@B[3*t:3*(t+1):2,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*(jac_tv_pos[k][j][t-1]@E_obs[k][j][2*t,:]) for l in range(self.n_obs)])
+                            # noise_coeff_const = ca.horzcat(jac_ev_pos[t-1].T@(E[3*t:3*(t+1):2,:]),*[0*jac_ev_pos[t-1]@B[2*t,:]@pol_gains[l][mode_map((m,l))]@E_obs[l][mode_map((m,l))][:2*self.N,:]-int(l==k)*jac_tv_pos[k][j][t-1]@E_obs[k][j][2*t,:] for l in range(self.n_obs)])
+                            rv_dist=sp.erfinv(1-self.delta)*(lin_dist@agg_Q[k][j][t-1]@noise_coeff)
                         
                         
                             try:
                                 ds = A[3*t:3*(t+1):2,:]@ca.DM(current_state)+B[3*t:3*(t+1):2,:]@ca.vec(opt_controls[m].T)
-                                dx = dpos[t-1]@(ds-x_lin[0:3:2,t].T)
-                                nom_dist=lin_dist@Qs[k][j][t-1]@(x_pos[:,t].T+dx-oa_ref)
-                                # print(f"nominal distance delta:  {lin_dist@Qs[k][j][t-1]@(x_pos[:,t]-oa_ref + dpos[t-1]*(A[2*t,:]@ca.DM(current_state)-z_lin[0,t]))}" )
+                                dx = jac_ev_pos[t-1]@(ds-x_lin[0:3:2,t].T)
+                                nom_dist=lin_dist@agg_Q[k][j][t-1]@(ev_global_pos[:,t].T+dx-obs_avoid_lin_ref)
+                                # print(f"nominal distance delta:  {lin_dist@agg_Q[k][j][t-1]@(ev_global_pos[:,t]-obs_avoid_lin_ref + jac_ev_pos[t-1]*(A[2*t,:]@ca.DM(current_state)-z_lin[0,t]))}" )
                             except:
                                 import pdb; pdb.set_trace()
                         
-                            opti.subject_to(rv_dist@rv_dist.T<=(nom_dist+slack)**2)
-                            opti.subject_to(nom_dist>=-slack)
+                            # opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
+                            # opti.subject_to(nom_dist>=0)
+                            soc = ca.soc(rv_dist, nom_dist)
+                            opti.subject_to(soc>0)
                             # opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
                             # opti.subject_to(nom_dist>=-0)
                             num_constr+= 2
         else:
             for j, cluster in enumerate(clusters):
+                obs_mode_considered = set()
                 for s_idx, scen in enumerate(cluster):
+                    # if s_idx%2!=0:
+                    #     continue
                     for k in range(n_obs):
+                       
                         u_tv = mm_tv_u[k][scen[k]]
                         prediction = mm_tv_pred[k][scen[k]]
-                        for t in range(1,self.N,1):
+                        # print(f"Considering obstacle {k} in mode {scen[k]}")
+                        if (k, scen[k]) not in obs_mode_considered:
+                            obs_mode_considered.add((k, scen[k]))
+                        else:
+                        #     # print(f"obstacle {k} and mode {scen[k]} already in {obs_mode_considered}")
+                            continue
+                        for t in range(1,self.N):
                             # if t==1:
                             #     print(f"Cluster {j}, Scenario {s_idx}, Obstacle {k}, Time {t} ")
-                            oa_ref=prediction[:,t]
-                            oa_ref+=(x_pos[:,t]-oa_ref)/((x_pos[:,t]-oa_ref).T@Qs[k][scen[k]][t-1]@(x_pos[:,t ]-oa_ref))**(0.5)
+                            obs_avoid_lin_ref=prediction[:,t]
+                            obs_avoid_lin_ref+=(ev_global_pos[:,t]-obs_avoid_lin_ref)/((ev_global_pos[:,t]-obs_avoid_lin_ref).T@agg_Q[k][scen[k]][t-1]@(ev_global_pos[:,t ]-obs_avoid_lin_ref))**(0.5)
                             
-                            lin_dist = (oa_ref-prediction[:,t]).T
-                            noise_coeff = ca.horzcat(dpos[t-1]@(E[3*t:3*(t+1):2,:]),*[dpos[t-1]@B[3*t:3*(t+1):2,:]@pol_gains[l][j]@E_obs[l][scen[l]][:2*self.N,:]-int(l==k)*(dpos_tvs[k][scen[k]][t-1]@E_obs[k][scen[k]][2*t,:]) for l in range(n_obs)])
-                            rv_dist=sp.erfinv(1-self.delta)*(lin_dist@Qs[k][scen[k]][t-1]@noise_coeff)
+                            lin_dist = (obs_avoid_lin_ref-prediction[:,t]).T
+                            noise_coeff = ca.horzcat(jac_ev_pos[t-1]@(E[3*t:3*(t+1):2,:]),*[jac_ev_pos[t-1]@B[3*t:3*(t+1):2,:]@pol_gains[l][j]@E_obs[l][scen[l]][:2*self.N,:]-int(l==k)*(jac_tv_pos[k][scen[k]][t-1]@E_obs[k][scen[k]][2*t,:]) for l in range(n_obs)])
+                            rv_dist=sp.erfinv(1-self.delta)*(lin_dist@agg_Q[k][scen[k]][t-1]@noise_coeff)
                             ds = A[3*t:3*(t+1):2,:]@ca.DM(current_state)+B[3*t:3*(t+1):2,:]@ca.vec(opt_controls[j].T)
-                            dx = dpos[t-1]@(ds-x_lin[0:3:2,t].T)
-                            nom_dist=lin_dist@Qs[k][scen[k]][t-1]@(x_pos[:,t].T+dx-oa_ref)
-                            opti.subject_to(rv_dist@rv_dist.T<=(nom_dist+slack)**2)
-                            opti.subject_to(nom_dist>=-slack)
-
+                            dx = jac_ev_pos[t-1]@(ds-x_lin[0:3:2,t].T)
+                            nom_dist=lin_dist@agg_Q[k][scen[k]][t-1]@(ev_global_pos[:,t].T+dx-obs_avoid_lin_ref)
+                            # opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
+                            # opti.subject_to(nom_dist>=0)
+                            soc = ca.soc(rv_dist, nom_dist)
+                            opti.subject_to(soc>0)
                             num_constr+=2
                         # soc = ca.soc(rv_dist, nom_dist)
                         # opti.subject_to(soc>0)
@@ -450,8 +464,8 @@ class MM_MPC_TI(MPC_Base):
                         #     nom_obca = (A_m_b@r_fun(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m])[:2]-b_m).T@lmbd-4-add_var
                         #     opti.subject_to(nom_obca>=0)
                         #     opti.subject_to(add_var>=0)
-                        #     # nom_obca = (A_m_b@x_pos[:,t]-b_m).T@lmbd_l+(A_m_b@(dpos[t-1]@(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m]))).T@lmbd_l\
-                        #     #     +  (A_m_b@x_pos[:,t]-b_m).T@(lmbd-lmbd_l)-4
+                        #     # nom_obca = (A_m_b@ev_global_pos[:,t]-b_m).T@lmbd_l+(A_m_b@(jac_ev_pos[t-1]@(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m]))).T@lmbd_l\
+                        #     #     +  (A_m_b@ev_global_pos[:,t]-b_m).T@(lmbd-lmbd_l)-4
                         #     # rv_obca  = sp.erfinv(1-self.delta)*(A_m_b@noise_coeff).T@lmbd
                         #     rv_obca  = sp.erfinv(1-self.delta)*((A_m_b@noise_coeff_const).T@lmbd_l+(A_m_b@noise_coeff_const).T@(lmbd-lmbd_l)+(A_m_b@(noise_coeff-noise_coeff_const)).T@lmbd_l)
                         #     soc1 = ca.soc(rv_obca, add_var)
@@ -469,7 +483,7 @@ class MM_MPC_TI(MPC_Base):
                             
                             
                         # nom_obca = (A_m_b@(r_fun(A[3*t,:]@ca.DM(current_state)+B[3*t,:]@ca.vec(opt_controls[m].T))[:2]+pos_dev)-b_m).T@lmbd-4.5
-                        # # nom_obca = (A_m@(x_pos[:,t]+dpos[t-1]@(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m]))-b_m).T@lmbd
+                        # # nom_obca = (A_m@(ev_global_pos[:,t]+jac_ev_pos[t-1]@(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m]))-b_m).T@lmbd
                         # rv_obca  = sp.erfinv(1-self.delta)*(A_m_b@noise_coeff).T@lmbd
                         
                         # opti.subject_to((A_m@r_fun(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m])[:2]-b_m).T@lmbd >= 6)
@@ -525,9 +539,9 @@ class MM_MPC_TI(MPC_Base):
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
             
-            for mode in range(num_modes):
-                self.feedback_gains[0][mode] = sol.value(pol_gains[0][mode]).toarray()
-                self.feedback_gains_cache[0][mode].append(sol.value(pol_gains[0][mode]).toarray())
+            # for mode in range(num_modes):
+            #     self.feedback_gains[0][mode] = sol.value(pol_gains[0][mode]).toarray()
+            #     self.feedback_gains_cache[0][mode].append(sol.value(pol_gains[0][mode]).toarray())
 
             # obtain the control input
             u_res = [sol.value(opt_controls[j]) for j in range(scene_modes)]

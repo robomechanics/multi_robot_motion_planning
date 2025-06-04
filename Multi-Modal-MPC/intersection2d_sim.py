@@ -46,7 +46,7 @@ class Prb_check_n_cluster:
 
         # compute m2 for each sample: deltas @ A @ deltasᵀ
         deltas = ev_pos[None, :] - samples  # (M,2)
-        m2_vals = np.einsum('mi,ij,mj->m', deltas, A, deltas)
+        m2_vals = np.einsum('mi,ij,mj->m', deltas, A, deltas) 
 
         p_coll   = float(np.mean(m2_vals <= 1.0))
         # overlap score per sample
@@ -100,25 +100,45 @@ class Prb_check_n_cluster:
         ]
         flat.sort(key=lambda x: x[2], reverse=True)
         K_max = self.K_max
+        obs_list  = list(risk_score.keys())
         # 2) Pick the top K_max-1 anchors
         n_anchors = max(0, K_max - 1)
         anchors = [(i, j) for i, j, _ in flat[:n_anchors]]
-
+        obs_anchors  = [next(((i,j) for i,j,_ in flat if i == obs_idx), None) for obs_idx in obs_list] 
+        
+        if len(obs_anchors) > n_anchors:
+            obs_anchors = obs_anchors[:n_anchors]
+        elif len(obs_anchors) < n_anchors:
+            extra_anchors = []
+            ctr = 1
+            while len(extra_anchors)<n_anchors - len(obs_anchors):
+                if flat[ctr] not in obs_anchors:
+                    extra_anchors.append(flat[ctr])
+                ctr+=1
+            obs_anchors.extend(extra_anchors)
         # 3) Enumerate ALL scenarios as tuples of length N_obs
         all_scenarios = self.all_scenarios
-
+        # anchors = obs_anchors
+        # obs_anchors = set(obs_anchors)
+        # print(obs_anchors)
         # 4) Build one cluster per anchor
+        def _contains_anchor(scene_mode, k):
+            for obs_idx in obs_list:
+                if obs_idx!= k and (obs_idx,scene_mode[obs_idx]) in obs_anchors:
+                    return True
+            return False
         clusters: List[List[Tuple[int,...]]] = []
+        used = set()
         for (obs_i, mode_j) in anchors:
-            cluster = [
-                scen
+            
+            cluster = [ scen
                 for scen in all_scenarios
-                if scen[obs_i] == mode_j
-            ]
+                if scen[obs_i] == mode_j and scen not in used and not _contains_anchor(scen, obs_i)
+                ]
             clusters.append(cluster)
+            used = used.union(set(cluster))
 
         # 5) Leftover = those scenarios not in any anchored cluster
-        used = set(s for cluster in clusters for s in cluster)
         leftover = [s for s in all_scenarios if s not in used]
         clusters.append(leftover)
       
@@ -131,7 +151,8 @@ class Simulator():
                 T_FINAL     = 1000,
                 reduced_mode=False,
                 viz_preds=True,
-                eval_mode=False
+                eval_mode=False,
+                K_max = 3
                 ):
         
         self.reduced_mode=reduced_mode
@@ -164,7 +185,7 @@ class Simulator():
                 self.N_modes.append(3)
             else:
                 self.ev=v
-        self.checker = Prb_check_n_cluster(all_combinations= list(product(*(range(m) for m in self.N_modes))),K_max = 3, num_samples=50)
+        self.checker = Prb_check_n_cluster(all_combinations= list(product(*(range(m) for m in self.N_modes))),K_max = K_max, num_samples=50)
 
        
 
@@ -657,14 +678,199 @@ class Simulator():
         return x, x_glob, dx_glob, mm_o_glob, mm_u_tvs, mm_routes, mm_droutes, mm_Qs, Revs, mm_tv_cov, mm_tv_glob_cov
         
     
+    # def _make_lanes(self):
+    #     #                         
+    #     # lane numbering:= 0:W->E, 1:E->W, 2:E->W (slow), (straights)
+    #     #                  3:W->N,                        (lefts)
+    #     #                  4:E->N                         (rights) 
+    #     self.modes   = {'E':[1,2,4,8, 9,10], 'W':[0,3,5,6,7]}
+    #     self.sources = {0:'W', 1:'E', 2: 'E', 3: 'W', 4:'E', 5:'W', 6:'W', 7:'W', 8:'E', 9:'E', 10:'E'}
+    #     self.sinks   = {0:'E', 1:'W', 2: 'W', 3:'N', 4:'N', 5:'E', 6:'E', 7:'E', 8:'W', 9:'W', 10:'W'}
+
+    #     #               TV  ped_W  ped_E     
+    #     self.n_modes  = [3,   3,    3 ]
+       
+        
+    #     def _make_ca_fun(s, x, y, psi, v):
+
+    #         x_ca= ca.interpolant("f2gx", "linear", [s], x)
+    #         y_ca= ca.interpolant("f2gy", "linear", [s], y)
+    #         psi_ca= ca.interpolant("f2gpsi", "linear", [s], psi)
+    #         v_ca= ca.interpolant("f2gv", "linear", [s], v)
+    #         s_sym=ca.MX.sym("s",1)
+
+    #         glob_fun=ca.Function("fx",[s_sym], [ca.vertcat(x_ca(s_sym), y_ca(s_sym), psi_ca(s_sym), v_ca(s_sym))])
+
+    #         return glob_fun
+        
+    #     def _make_jac_fun(pos_fun):
+    #         s_sym=ca.MX.sym("s",1)
+    #         pos_jac=ca.jacobian(pos_fun(s_sym), s_sym)
+    #         return ca.Function("pos_jac",[s_sym], [pos_jac])
+
+    #     self.routes_pose=[]
+    #     self.droutes=[]
+
+    #     straights_x=[]
+    #     # 0 : W->E
+    #     s=np.array([0,110])
+    #     xs=np.array((-50,60))
+    #     ys=np.array((0,0))
+    #     psis=np.array((np.pi, np.pi))
+    #     vs=np.array([8.5, 10.0])
+    #     r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
+    #     straights_x.append(r_fun)
+    #     self.droutes.append(_make_jac_fun(r_fun))
+    #     s_r=np.linspace(s[0], s[-1])
+   
+    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+
+    #     # 1 : E->W
+    #     r_fun=_make_ca_fun(s,xs[::-1],ys+15., psis, vs)
+    #     straights_x.append(r_fun)
+    #     self.droutes.append(_make_jac_fun(r_fun))
+    #     s_r=np.linspace(s[0], s[-1])
+    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+
+    #     # 2 : E->W
+    #     s=np.array([0,29])
+    #     xs=np.array((60,31))
+    #     ys=np.array((15,15))
+    #     vs=np.array([9.5,0.0])
+    #     r_fun=_make_ca_fun(s,xs,ys, -psis, vs)
+    #     straights_x.append(r_fun)
+    #     self.droutes.append(_make_jac_fun(r_fun))
+    #     s_r=np.linspace(s[0], s[-1])
+    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+        
+        
+    #     lefts_x=[]        
+    #     # 3 : W->N
+    #     thet=np.linspace(0,np.pi/2, 100)
+
+    #     x_f= lambda t :  8.5 + 15*np.sin(t)
+    #     y_f= lambda t :  15 - 15*np.cos(t)
+    #     s=np.hstack((np.array([0, 58.5]), 58.501 + 15.*thet, np.array([58.502+15.*np.pi/2, 58.5 + 15.*np.pi/2+25])))
+    #     vs=np.hstack((np.array([10., 7.]), 7. + 0.*thet, np.array([7., 8.])))
+    #     x_l=np.hstack((np.array([-50.,7.5]),x_f(thet), np.array([23.5, 23.5])))
+    #     y_l=np.hstack((np.array([0.,0.]), y_f(thet), np.array([15, 40.])))
+
+    #     psis=np.hstack((np.array([0.0, 0.]),  thet, 0.5*np.array([np.pi, np.pi])))
+    #     r_fun=_make_ca_fun(s, x_l, y_l, psis, vs)
+    #     lefts_x.append(r_fun)
+    #     self.droutes.append(_make_jac_fun(r_fun))
+    #     s_r=np.linspace(s[0], s[-1])
+    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+
+    #     lefts = lefts_x
+
+    #     rights=[] 
+
+    #     # 4 : E->N
+    #     x_f= lambda t :  31. - 7.5*np.sin(t)
+    #     y_f= lambda t :  22.5 - 7.5*np.cos(t)
+    #     s=np.hstack((np.array([0, 29.]), 29.001 + 7.5*thet, np.array([29.002+7.5*np.pi/2, 29.0 + 7.5*np.pi/2+17.5])))
+    #     x_l=np.hstack((np.array([60.,31.]), x_f(thet), np.array([23.5, 23.5])))
+    #     y_l=np.hstack((np.array([15.,15.]), y_f(thet), np.array([22.5, 40.])))
+    #     psis=np.hstack((np.array([np.pi, np.pi]), np.pi-thet, 0.5*np.array([np.pi, np.pi])))
+    #     vs=np.hstack((np.array([8, 5.5]), 5.5 + 0.*thet, np.array([5.5, 8])))
+    #     r_fun=_make_ca_fun(s, x_l, y_l, psis,vs)
+    #     rights.append(r_fun)
+    #     self.droutes.append(_make_jac_fun(r_fun))
+    #     s_r=np.linspace(s[0], s[-1])
+    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+        
+    #     ped_cross =[]
+    #     # 5 : W->E (run)
+    #     s=np.array([0,31])
+    #     xs=np.array((1,32))
+    #     ys=np.array((26,26))
+    #     psis=np.array((np.pi, np.pi))
+    #     vs=np.array([4, .0])
+    #     r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
+    #     ped_cross.append(r_fun)
+    #     self.droutes.append(_make_jac_fun(r_fun))
+    #     s_r=np.linspace(s[0], s[-1])
+    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+        
+    #     # 6 : W->E (walk)
+    #     s=np.array([0,31])
+    #     xs=np.array((1,32))
+    #     ys=np.array((26,26))
+    #     psis=np.array((np.pi, np.pi))
+    #     vs=np.array([2, 0.])
+    #     r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
+    #     ped_cross.append(r_fun)
+    #     self.droutes.append(_make_jac_fun(r_fun))
+    #     s_r=np.linspace(s[0], s[-1])
+    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+        
+    #     # 7 : W->E (yield)
+    #     s=np.array([0,1])
+    #     xs=np.array((1,2))
+    #     ys=np.array((26,26))
+    #     psis=np.array((np.pi, np.pi))
+    #     vs=np.array([0.2, 0])
+    #     r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
+    #     ped_cross.append(r_fun)
+    #     self.droutes.append(_make_jac_fun(r_fun))
+    #     s_r=np.linspace(s[0], s[-1])
+    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+        
+
+    #     # 8 : E->W (run)
+    #     s=np.array([0,31])
+    #     xs=np.array((1,32))
+    #     ys=np.array((26,26))
+    #     psis=np.array((np.pi, np.pi))
+    #     vs=np.array([4, .0])
+    #     r_fun=_make_ca_fun(s,xs[::-1],ys-1.0, psis, vs)
+    #     ped_cross.append(r_fun)
+    #     self.droutes.append(_make_jac_fun(r_fun))
+    #     s_r=np.linspace(s[0], s[-1])
+    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+        
+    #     # 9 : E->W (walk)
+    #     vs=np.array([2, 0.])
+    #     r_fun=_make_ca_fun(s,xs[::-1],ys-1., psis, vs)
+    #     ped_cross.append(r_fun)
+    #     self.droutes.append(_make_jac_fun(r_fun))
+    #     s_r=np.linspace(s[0], s[-1])
+    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+        
+    #     # 10 : E->W (yield)
+    #     s=np.array([0,1])
+    #     xs=np.array((31,32))
+    #     vs=np.array([0.2, 0])
+    #     r_fun=_make_ca_fun(s,xs[::-1],ys-1., psis, vs)
+    #     ped_cross.append(r_fun)
+    #     self.droutes.append(_make_jac_fun(r_fun))
+    #     s_r=np.linspace(s[0], s[-1])
+    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+
+    #     straights = straights_x
+        
+    #     self.routes=straights+lefts+rights+ped_cross
+    
     def _make_lanes(self):
         #                         
         # lane numbering:= 0:W->E, 1:E->W, 2:E->W (slow), (straights)
         #                  3:W->N,                        (lefts)
         #                  4:E->N                         (rights) 
-        self.modes   = {'E':[1,2,4,8, 9,10], 'W':[0,3,5,6,7]}
-        self.sources = {0:'W', 1:'E', 2: 'E', 3: 'W', 4:'E', 5:'W', 6:'W', 7:'W', 8:'E', 9:'E', 10:'E'}
-        self.sinks   = {0:'E', 1:'W', 2: 'W', 3:'N', 4:'N', 5:'E', 6:'E', 7:'E', 8:'W', 9:'W', 10:'W'}
+        self.modes   = {'E':[1,2,4,8, 9,10], 'W':[0,3,5,6,7], 'S':[11]}
+        self.sources = {0:'W', 1:'E', 2: 'E', 3: 'W', 4:'E', 5:'W', 6:'W', 7:'W', 8:'E', 9:'E', 10:'E', 11:'S'}
+        self.sinks   = {0:'E', 1:'W', 2: 'W', 3:'N', 4:'N', 5:'E', 6:'E', 7:'E', 8:'W', 9:'W', 10:'W', 11:'N'}
 
         #               TV  ped_W  ped_E     
         self.n_modes  = [3,   3,    3 ]
@@ -770,7 +976,7 @@ class Simulator():
         xs=np.array((1,32))
         ys=np.array((26,26))
         psis=np.array((np.pi, np.pi))
-        vs=np.array([3, .0])
+        vs=np.array([4, .0])
         r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -783,7 +989,7 @@ class Simulator():
         xs=np.array((1,32))
         ys=np.array((26,26))
         psis=np.array((np.pi, np.pi))
-        vs=np.array([1.5, 0.])
+        vs=np.array([2, 0.])
         r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -810,7 +1016,7 @@ class Simulator():
         xs=np.array((1,32))
         ys=np.array((26,26))
         psis=np.array((np.pi, np.pi))
-        vs=np.array([3, .0])
+        vs=np.array([4, .0])
         r_fun=_make_ca_fun(s,xs[::-1],ys-1.0, psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -819,7 +1025,7 @@ class Simulator():
         self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
         
         # 9 : E->W (walk)
-        vs=np.array([1.5, 0.])
+        vs=np.array([2, 0.])
         r_fun=_make_ca_fun(s,xs[::-1],ys-1., psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -838,9 +1044,22 @@ class Simulator():
         r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
         self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
 
+        # 11 : S->N
+        s=np.array([0,55])
+        xs=np.array((23.5,23.5))
+        ys=np.array((-15,40))
+        psis=np.array((np.pi/2, np.pi/2))
+        vs=np.array([7., 7.0])
+        r_fun=_make_ca_fun(s,xs,ys, psis, vs)
+        self.droutes.append(_make_jac_fun(r_fun))
+        s_r=np.linspace(s[0], s[-1])
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+        
+        
         straights = straights_x
         
-        self.routes=straights+lefts+rights+ped_cross
+        self.routes=straights+lefts+rights+ped_cross + [r_fun]
 
     def _g2f(self, pos, cl):
         idx=np.argmin(np.linalg.norm(self.routes_pose[cl][:2,:]-pos.reshape((-1,1)), axis=0))
@@ -854,12 +1073,14 @@ class Simulator():
 
         #Map Boundaries and roads
         ax.add_patch(Rectangle((-50, -7.5),110,30,linewidth=1,edgecolor='darkgrey', fc='darkgrey',fill=True, alpha=0.5))
-        ax.add_patch(Rectangle((1, -7.5),30,47.5,linewidth=1,edgecolor='darkgrey', fc='darkgrey',fill=True, alpha=0.5))
+        ax.add_patch(Rectangle((1, -30),30,70,linewidth=1,edgecolor='darkgrey', fc='darkgrey',fill=True, alpha=0.5))
         ax.plot([-50, 1], [22.5, 22.5], color='k', lw=2)
         ax.plot([-50, 60], [-7.5, -7.5], color='k', lw=2)
         ax.plot([31, 60], [22.5, 22.5], color='k', lw=2)
         ax.plot([1, 1], [22.5, 40], color='k', lw=2)
         ax.plot([31, 31], [22.5, 40], color='k', lw=2)
+        ax.plot([1, 1], [-7.5, -30], color='k', lw=2)
+        ax.plot([31, 31], [-7.5, -30], color='k', lw=2)
         
         for r in self.routes_pose[:5]:
             ax.plot(r[0,:], r[1,:], color='w', linewidth= 1.2, linestyle = (0, (5,10)))

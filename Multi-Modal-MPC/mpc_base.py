@@ -9,7 +9,7 @@ from matplotlib.animation import FuncAnimation
 import seaborn as sns
 
 class MPC_Base:
-    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, map=None, ref=None, feedback=None, robust_horizon=None):
+    def __init__(self, initial_state, final_state, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data,  map=None, ref=None, feedback=None, robust_horizon=None, num_clusters = 3):
         self.num_agent = mpc_params['num_agents']
         self.dt = mpc_params['dt']
         self.N = mpc_params['N']
@@ -31,7 +31,7 @@ class MPC_Base:
         self.uncontrolled_fleet = uncontrolled_fleet
         self.uncontrolled_fleet_data = uncontrolled_fleet_data
         self.delta = 0.1
-        
+        self.num_clusters = num_clusters
         self.num_modes = 3
         self.robust_horizon = robust_horizon
         self.feedback = feedback
