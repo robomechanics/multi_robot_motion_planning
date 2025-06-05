@@ -13,12 +13,13 @@ from itertools import product
 import random
 from typing import Dict, List, Tuple
 
-
+from scipy.stats import multivariate_normal
 
 class Prb_check_n_cluster:
     def __init__(self, all_combinations,
                  K_max: int = 3,
-                 num_samples: int = 50):
+                 num_samples: int = 50,
+                 prob_thresh: float = 0.05):
         """
         :param num_samples: # of Monte Carlo draws per time‑step
         """
@@ -26,12 +27,14 @@ class Prb_check_n_cluster:
         self.M    = num_samples
         self.all_scenarios = all_combinations
         self.K_max = K_max
+        self.prob_thresh = 0.05
 
     def _mc_overlap_score(self,
                           ev_pos: np.ndarray,
                           tv_mean: np.ndarray,
                           tv_cov: np.ndarray,
-                          agg_shape: np.ndarray
+                          agg_shape: np.ndarray,
+                          pred_prob: np.ndarray
                          ) -> float:
         """
         Approximate E[max(0, 1 - m2)] at one timestep, where
@@ -48,7 +51,7 @@ class Prb_check_n_cluster:
         deltas = ev_pos[None, :] - samples  # (M,2)
         m2_vals = np.einsum('mi,ij,mj->m', deltas, A, deltas) 
 
-        p_coll   = float(np.mean(m2_vals <= 1.0))
+        p_coll   = float(np.mean(m2_vals <= 1.0))*pred_prob
         # overlap score per sample
         overlap_vals = np.maximum(0.0, 1.0 - m2_vals)
         
@@ -58,33 +61,39 @@ class Prb_check_n_cluster:
                   ev_glob,
                   all_tv_means,
                   all_tv_covs,
-                  all_tv_shapes
+                  all_tv_shapes,
+                  mm_prob
                  ):
         """
-        :returns: dict mapping (tv_idx,mode_idx) → risk_score
-                  
+        :returns: dict mappings (tv_idx,mode_idx) → risk_score
+                                                  → collision_probability
         """
         T = ev_glob.shape[1]
         risk_score = {tv_i : {mode_j: 0 for mode_j, _ in enumerate(modes)} for tv_i, modes in enumerate(all_tv_means)}
+        collision_probability = {tv_i : {mode_j: 0 for mode_j, _ in enumerate(modes)} for tv_i, modes in enumerate(all_tv_means)}
 
         for tv_i, modes in enumerate(all_tv_means):
             for mode_j, mean_traj in enumerate(modes):
                 score_i_j = 0
+                p_collision = 0
                 for t in range(1,T):
                     
                     p_coll, score = self._mc_overlap_score(
                             ev_pos   = ev_glob[:, t],
                             tv_mean  = mean_traj[:, t],
                             tv_cov   = all_tv_covs[tv_i][mode_j][t],
-                            agg_shape = all_tv_shapes[tv_i][mode_j][t-1]
+                            agg_shape = all_tv_shapes[tv_i][mode_j][t-1],
+                            pred_prob=mm_prob[tv_i][mode_j]
                         )
 
                     score_i_j = max(score_i_j, score)
+                    p_collision = max(p_collision, p_coll)
                 risk_score[tv_i][mode_j] = score_i_j
+                collision_probability[tv_i][mode_j] = p_collision
 
-        return risk_score
+        return risk_score, collision_probability
     
-    def get_scenario_clusters(self, risk_score): 
+    def get_scenario_clusters(self, risk_score, prob_collision): 
         """
         :param risk_score: risk_score[i][j] = score for obstacle i in mode j
         
@@ -127,20 +136,27 @@ class Prb_check_n_cluster:
                 if obs_idx!= k and (obs_idx,scene_mode[obs_idx]) in obs_anchors:
                     return True
             return False
+        
+        def _above_p_threshold(scene_mode):
+            return sum(prob_collision[obs_idx][scene_mode[obs_idx]] for obs_idx in obs_list)>= self.prob_thresh
+        
         clusters: List[List[Tuple[int,...]]] = []
         used = set()
         for (obs_i, mode_j) in anchors:
             
             cluster = [ scen
                 for scen in all_scenarios
-                if scen[obs_i] == mode_j and scen not in used and not _contains_anchor(scen, obs_i)
+                if scen[obs_i] == mode_j and scen not in used and not _contains_anchor(scen, obs_i) and \
+                    _above_p_threshold(scen)
                 ]
-            clusters.append(cluster)
-            used = used.union(set(cluster))
+            if len(cluster)>0:
+                clusters.append(cluster)
+                used = used.union(set(cluster))
 
         # 5) Leftover = those scenarios not in any anchored cluster
-        leftover = [s for s in all_scenarios if s not in used]
-        clusters.append(leftover)
+        leftover = [s for s in all_scenarios if s not in used and _above_p_threshold(s)]
+        if len(leftover)>0:
+            clusters.append(leftover)
       
         return clusters
     
@@ -171,7 +187,7 @@ class Simulator():
         
         # Added incrementally
         self.N_modes=[]
-        
+        self.mode_probabities = []
         
         for i,v in enumerate(self.agents):
             if v.role=="TV":
@@ -179,10 +195,12 @@ class Simulator():
                 self.tvs.append(v)
                 self.tv_idxs.append(i)
                 self.N_modes.append(3)
+                self.mode_probabities.append(1/3*np.ones(3))
             elif v.role=="ped":
                 self.peds.append(v)
                 self.ped_idxs.append(i)
                 self.N_modes.append(3)
+                self.mode_probabities.append(1/3*np.ones(3))
             else:
                 self.ev=v
         self.checker = Prb_check_n_cluster(all_combinations= list(product(*(range(m) for m in self.N_modes))),K_max = K_max, num_samples=50)
@@ -324,7 +342,7 @@ class Simulator():
             if self.routes_pose[v.cl][-1,-1]-v.traj[0,v.t]<=0.01:
                 print("Resetting agent: {}".format(i+1))
                 print("Reached {}".format(v.traj[0,v.t]))
-                new_cl=sample(self.modes[self.sources[v.cl]][:3],1)[0]
+                new_cl=sample(self.veh_modes[self.sources[v.cl]],1)[0]
 
 
                 # if v.cl!=2 and v.cl!=4:
@@ -342,7 +360,7 @@ class Simulator():
             if self.routes_pose[v.cl][-1,-1]-v.traj[0,v.t]<=0.01:
                 print("Resetting agent: {}".format(i+1))
                 print("Reached {}".format(v.traj[0,v.t]))
-                new_cl=sample(self.modes[self.sources[v.cl]][-3:],1)[0]
+                new_cl=sample(self.ped_modes[self.sources[v.cl]],1)[0]
 
 
                 # if v.cl!=2 and v.cl!=4:
@@ -386,6 +404,39 @@ class Simulator():
     def step(self, u_ev=None, verbose=False):
         random.seed(100)
 
+        def _update_mode_probabilities(agent_i):
+            v = self.agents[agent_i]
+            curr_pos = v.traj_glob[:2,v.t]
+            prev_state, prev_control = v.traj[:, v.t-1], v.u[v.t-1]
+            if v.role == "TV":
+                modes=[v.cl]+[ cl for cl in self.veh_modes[self.sources[v.cl]] if cl !=v.cl]
+            else:
+                modes=[v.cl]+[ cl for cl in self.ped_modes[self.sources[v.cl]] if cl !=v.cl]
+            expected_curr_state, cov = v.get_next(prev_state,prev_control, cov = 0*np.eye(2))
+            prior = self.mode_probabities[agent_i]
+            posterior = prior
+            for j in modes:
+                jac_glob=self.droutes[j](v.traj[0,v.t-1])[:2]
+                affine_glob_tf = ca.horzcat(jac_glob, ca.DM([0,1])).T
+                next_cov_glob   =   affine_glob_tf@cov@affine_glob_tf.T
+                expected_curr_pos = np.array(self.routes[j](expected_curr_state[0])[:2]).squeeze()
+                diff_pos = expected_curr_pos - curr_pos
+                likelihood_j = multivariate_normal.pdf(diff_pos, mean = np.zeros(2), cov = next_cov_glob)
+                mode_idx=modes.index(j)
+                posterior[mode_idx] = likelihood_j*prior[mode_idx]
+            
+            total = np.sum(posterior)
+            if total <= 0:
+                # If numerical underflow or all likelihoods≈0, fall back to uniform:
+                new_mode_probs = np.ones(3) / 3
+            else:
+                new_mode_probs = posterior / total
+            
+            self.mode_probabities[agent_i] = new_mode_probs
+
+
+            
+
         for ind, v in enumerate(self.agents):
             if v != self.ev:
                 v.traj_glob[:,v.t]=np.array(self.routes[v.cl](v.traj[0,v.t])[:3]).squeeze()
@@ -398,6 +449,7 @@ class Simulator():
                     v_des, dv, ds= self._get_idm_params(v.traj[:,v.t], v.cl, v_, cl_, verbose = True)
                     a = v.clip_vel_acc(v.traj[:,v.t],v.idm(v_des, dv, ds)) 
                     v.step(a)
+                    
                 else:
                     v_des = self.routes[v.cl](.0+v.traj[0,v.t])[3]
                     v.step(v.idm(v_des))
@@ -407,6 +459,9 @@ class Simulator():
                             v.cl = random.choice([5,6])
                         else:
                             v.cl = random.choice([8,9])
+
+                if v.t>1:
+                        _update_mode_probabilities(ind)
 
         self.ev.traj_glob[:,self.ev.t]=np.array(self.routes[self.ev.cl](self.ev.traj[0,self.ev.t])[:3]).squeeze()
         x_dev, y_dev, psi_dev  = self.get_deviation(self.ev.traj[0,self.ev.t], self.ev.traj2d[-1, self.t], self.ev.u2d[-1, self.t])
@@ -441,13 +496,14 @@ class Simulator():
         u_prev=self.ev.u[self.ev.t-1] if self.ev.t>0 else 0.
         u2d_prev=self.ev.u2d[:,self.ev.t-1] if self.ev.t>0 else np.array([0., 0])
         
-        risk_score = self.checker.check_all(
+        risk_score, prob_collision = self.checker.check_all(
                     ev_glob       = np.array(x_pos),   # 2×(N+1)
                     all_tv_means  = mm_o_glob,          # per-TV, per-mode mean traj
                     all_tv_covs   = mm_glob_covs,            # per-TV, per-mode list of covariances
-                    all_tv_shapes = mm_Qs               # per-TV, per-mode geometric ellipses
+                    all_tv_shapes = mm_Qs,               # per-TV, per-mode geometric ellipses
+                    mm_prob= self.mode_probabities
                 )
-        scenario_clusters = self.checker.get_scenario_clusters(risk_score)
+        scenario_clusters = self.checker.get_scenario_clusters(risk_score, prob_collision)
         # pdb.set_trace()
         
         update_dict={'x0': self.ev.traj2d[:,self.ev.t], 'u_prev': u2d_prev,
@@ -593,7 +649,7 @@ class Simulator():
         mm_tv_glob_cov  =  [[copy.deepcopy(tv_glob_cov[i]) for _ in range(self.n_modes[i])] for i,v in enumerate(self.agents) if v!=self.ev]
 
         for i in tv_list:
-            modes=list(set(self.modes[self.sources[self.agents[i].cl]])-set([self.agents[i].cl]))[:-3]
+            modes=list(set(self.veh_modes[self.sources[self.agents[i].cl]])-set([self.agents[i].cl]))
             
             
             for t in range(N):
@@ -605,7 +661,7 @@ class Simulator():
                  or (self.sources[self.agents[i].cl]=="W" and self.agents[i].traj[0,self.t]<=51.+3.):
                     for j in modes:
                         
-                        n=self.modes[self.sources[self.agents[i].cl]].index(j)
+                        n = modes.index(j)+1
                         
                         if t==0:
                            
@@ -637,16 +693,16 @@ class Simulator():
                         # mm_Qs[i][n][t]  = Rtv.T@Rev
                         
         for i in ped_list:
-            modes=list(set(self.modes[self.sources[self.agents[i].cl]])-set([self.agents[i].cl]))[-2:]
+            modes=list(set(self.ped_modes[self.sources[self.agents[i].cl]])-set([self.agents[i].cl]))
             
             for t in range(N):
                 
                 Rev=Revs[t]
                 
                 for j in modes:
-                    n=self.modes[self.sources[self.agents[i].cl]].index(j) -(len(self.modes[self.sources[self.agents[i].cl]])-3)
+                    n=modes.index(j)+1
                     
-                    if n+1== len(self.modes[self.sources[self.agents[i].cl]]) and self.agents[i].traj[0,self.t]>=1.0:
+                    if n+1== len(self.ped_modes[self.sources[self.agents[i].cl]]) and self.agents[i].traj[0,self.t]>=1.0:
                         continue
                     else:
                     
@@ -868,9 +924,11 @@ class Simulator():
         # lane numbering:= 0:W->E, 1:E->W, 2:E->W (slow), (straights)
         #                  3:W->N,                        (lefts)
         #                  4:E->N                         (rights) 
-        self.modes   = {'E':[1,2,4,8, 9,10], 'W':[0,3,5,6,7], 'S':[11]}
-        self.sources = {0:'W', 1:'E', 2: 'E', 3: 'W', 4:'E', 5:'W', 6:'W', 7:'W', 8:'E', 9:'E', 10:'E', 11:'S'}
-        self.sinks   = {0:'E', 1:'W', 2: 'W', 3:'N', 4:'N', 5:'E', 6:'E', 7:'E', 8:'W', 9:'W', 10:'W', 11:'N'}
+        self.modes   = {'E':[1,2,4,8, 9,10], 'W':[0,3,5,6,7, 12], 'S':[11]}
+        self.veh_modes = {'E':[1,2,4], 'W':[0,3, 12], 'S':[11]}
+        self.ped_modes = {'E':[8, 9,10], 'W':[5,6,7], 'S':[]}
+        self.sources = {0:'W', 1:'E', 2: 'E', 3: 'W', 4:'E', 5:'W', 6:'W', 7:'W', 8:'E', 9:'E', 10:'E', 11:'S', 12: 'W'}
+        self.sinks   = {0:'E', 1:'W', 2: 'W', 3:'N', 4:'N', 5:'E', 6:'E', 7:'E', 8:'W', 9:'W', 10:'W', 11:'N', 12: 'E'}
 
         #               TV  ped_W  ped_E     
         self.n_modes  = [3,   3,    3 ]
@@ -1055,11 +1113,27 @@ class Simulator():
         s_r=np.linspace(s[0], s[-1])
         r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
         self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-        
+
         
         straights = straights_x
         
         self.routes=straights+lefts+rights+ped_cross + [r_fun]
+
+        # 12 : W->E (yield)
+        s=  np.array([0, 57.5])
+        vs=np.array([9., 0.])        
+        x_l=np.array([-50.,7.5])
+        y_l=np.array([0.,0.])
+
+        psis=np.array([0.0, 0.])
+        r_fun=_make_ca_fun(s, x_l, y_l, psis, vs)
+        
+        self.droutes.append(_make_jac_fun(r_fun))
+        s_r=np.linspace(s[0], s[-1])
+        r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
+        self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
+
+        self.routes += [r_fun]
 
     def _g2f(self, pos, cl):
         idx=np.argmin(np.linalg.norm(self.routes_pose[cl][:2,:]-pos.reshape((-1,1)), axis=0))
