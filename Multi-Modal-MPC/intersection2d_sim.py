@@ -419,6 +419,7 @@ class Simulator():
                 jac_glob=self.droutes[j](v.traj[0,v.t-1])[:2]
                 affine_glob_tf = ca.horzcat(jac_glob, ca.DM([0,1])).T
                 next_cov_glob   =   affine_glob_tf@cov@affine_glob_tf.T
+                next_cov_glob  += 1e-3*np.eye(2)
                 expected_curr_pos = np.array(self.routes[j](expected_curr_state[0])[:2]).squeeze()
                 diff_pos = expected_curr_pos - curr_pos
                 likelihood_j = multivariate_normal.pdf(diff_pos, mean = np.zeros(2), cov = next_cov_glob)
@@ -503,7 +504,9 @@ class Simulator():
                     all_tv_shapes = mm_Qs,               # per-TV, per-mode geometric ellipses
                     mm_prob= self.mode_probabities
                 )
+        print(f'Modes probabilities: {self.mode_probabities}')
         scenario_clusters = self.checker.get_scenario_clusters(risk_score, prob_collision)
+        # scenario_clusters = self.checker.get_scenario_clusters(risk_score, self.mode_probabities)
         # pdb.set_trace()
         
         update_dict={'x0': self.ev.traj2d[:,self.ev.t], 'u_prev': u2d_prev,

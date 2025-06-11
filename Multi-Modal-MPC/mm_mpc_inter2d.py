@@ -112,8 +112,17 @@ class MM_MPC_TI(MPC_Base):
         # opti.minimize(total_cost)
 
         # opti.solver('ipopt', opts_setting)
-        # opti.solver('proxqp', {}, {'verbose':False, 'max_iter':500})
-        opti.solver('gurobi', {}, {'verbose':False})
+        # opti.solver('proxqp', {'error_on_fail':False}, {'verbose':False, 'max_iter':500})
+        opts = {
+            # "PreQLinearize": 1,
+            # "gurobi.PreSparsify": 1,
+            # "gurobi.NumericFocus": 1,
+            # "gurobi.Method": -1,
+            # "gurobi.Threads": 8,
+            "BarConvTol": 1e-6,
+            "verbose": True,  # Optional: print solver output
+        }
+        opti.solver('gurobi', {}, {})
         # opti.solver('proxqp', {}, {'verbose':False})
 
         current_state = update_dict['x0']
@@ -133,7 +142,7 @@ class MM_MPC_TI(MPC_Base):
         if 'clusters' in update_dict and 'SM-MPC' in self.scenario:
             clusters = update_dict['clusters']
             num_modes = len(clusters)
-            scene_modes = num_modes
+            scene_modes = max(num_modes,1)
             print(f'Doing SM-MPC with clusters: {clusters}')
         else:
             clusters = None
@@ -151,7 +160,10 @@ class MM_MPC_TI(MPC_Base):
         num_dec_var = 2*self.N
         num_constr = 0
         # h[j] = h_b + sum_{obst}h[k][j]  for MM, J= scene_mode, for SM, j = cluster index
-        opt_bias_mm  = [[opti.variable(self.N-self.robust_horizon,2) for _ in range(num_modes)] for _ in range(n_obs)]
+        if num_modes:
+            opt_bias_mm  = [[opti.variable(self.N-self.robust_horizon,2) for _ in range(num_modes)] for _ in range(n_obs)]
+        else:
+            opt_bias_mm  = [[ca.DM(self.N-self.robust_horizon,2)] for _ in range(n_obs)]
 
         opt_controls = [rob_u+ca.vertcat(ca.DM(self.robust_horizon,2), _get_mm_bias(j)) for j in range(scene_modes)]
         
@@ -205,7 +217,7 @@ class MM_MPC_TI(MPC_Base):
         
     
 
-        mode_prob = [1/num_modes for j in range(self.num_modes)]
+        mode_prob = [(1/self.num_modes)**n_obs for j in range(scene_modes)]
         for j in range(scene_modes):
             for k in range(self.N):
                 mode_weight = mode_prob[mode_map((j,0))]
@@ -215,8 +227,8 @@ class MM_MPC_TI(MPC_Base):
                 robot_cost = robot_cost + mode_weight*(-10*opt_states[j][k,0]
                     + .001*ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) ) #+ 100000 * opt_epsilon_r[j][k]) 
                 if k>0:
-                    robot_cost+= 100*mode_weight*(opt_controls[j][k-1,:]-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
-                    # robot_cost+= 1*mode_weight*(opt_states[j][k-1,2] - opt_states[j][k,2])**2
+                    robot_cost+= 10000*mode_weight*(opt_controls[j][k-1,:]-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
+                    robot_cost+= 10*mode_weight*(opt_states[j][k-1,2] - opt_states[j][k,2])**2
                     
                 opti.subject_to(opti.bounded(-1, v[j], 6))#self.v_lim))
             opti.subject_to(opti.bounded(-8, a[j], 3))
@@ -402,10 +414,10 @@ class MM_MPC_TI(MPC_Base):
                             except:
                                 import pdb; pdb.set_trace()
                         
-                            # opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
-                            # opti.subject_to(nom_dist>=0)
-                            soc = ca.soc(rv_dist, nom_dist)
-                            opti.subject_to(soc>0)
+                            opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
+                            opti.subject_to(nom_dist>=0)
+                            # soc = ca.soc(rv_dist, nom_dist)
+                            # opti.subject_to(soc>0)
                             # opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
                             # opti.subject_to(nom_dist>=-0)
                             num_constr+= 2
@@ -437,10 +449,10 @@ class MM_MPC_TI(MPC_Base):
                             ds = A[3*t:3*(t+1):2,:]@ca.DM(current_state)+B[3*t:3*(t+1):2,:]@ca.vec(opt_controls[j].T)
                             dx = jac_ev_pos[t-1]@(ds-x_lin[0:3:2,t].T)
                             nom_dist=lin_dist@agg_Q[k][scen[k]][t-1]@(ev_global_pos[:,t].T+dx-obs_avoid_lin_ref)
-                            # opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
-                            # opti.subject_to(nom_dist>=0)
-                            soc = ca.soc(rv_dist, nom_dist)
-                            opti.subject_to(soc>0)
+                            opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
+                            opti.subject_to(nom_dist>=0)
+                            # soc = ca.soc(rv_dist, nom_dist)
+                            # opti.subject_to(soc>0)
                             num_constr+=2
                         # soc = ca.soc(rv_dist, nom_dist)
                         # opti.subject_to(soc>0)
@@ -499,7 +511,8 @@ class MM_MPC_TI(MPC_Base):
             rob_u_init = self.prev_controls[agent_id]['rob_u']
             opti.set_initial(rob_u, rob_u_init)
             for k in range(n_obs):
-            
+                if len(self.prev_controls[agent_id]['bias'][k]) != num_modes:
+                    continue
                 for j in range(num_modes):
                     bias_init  = self.prev_controls[agent_id]['bias'][k][j]
                     opti.set_initial(opt_bias_mm[k][j], bias_init)
@@ -518,9 +531,10 @@ class MM_MPC_TI(MPC_Base):
         try:     
             # solve the optimization problem
             t_ = time.time()
-           
+            # import pdb; pdb.set_trace()
             sol = opti.solve()
             # print(sol)
+            
             solve_time = time.time() - t_
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
             
@@ -529,23 +543,41 @@ class MM_MPC_TI(MPC_Base):
             #     self.feedback_gains_cache[0][mode].append(sol.value(pol_gains[0][mode]).toarray())
 
             # obtain the control input
-            u_res = [sol.value(opt_controls[j]) for j in range(scene_modes)]
-            # next_states_pred = sol.value(opt_states)
-            next_states_pred = [[ca.DM(current_state).T] for j in range(scene_modes)]
-            rob_u_sol   = sol.value(rob_u)
-            bias_sols = [[None for j in range(num_modes)] for k in range(n_obs)]
-            # obca_sols  = [[None for j in range(self.num_modes)] for k in range(n_obs)]
-            for j in range(scene_modes):
-                # for t in range(u_res[j].shape[0]):
-                #     next_states_pred[j].append()
-                # next_states_pred[j] = ca.vertcat(*next_states_pred[j])
-                next_states_pred[j] = sol.value(opt_states[j])
-                if clusters is None:
+            if clusters is None:
+                u_res = [sol.value(opt_controls[j]) for j in range(scene_modes)]
+                # next_states_pred = sol.value(opt_states)
+                next_states_pred = [[ca.DM(current_state).T] for j in range(scene_modes)]
+                rob_u_sol   = sol.value(rob_u)
+                bias_sols = [[None for j in range(num_modes)] for k in range(n_obs)]
+                # obca_sols  = [[None for j in range(self.num_modes)] for k in range(n_obs)]
+                for j in range(scene_modes):
+                    # for t in range(u_res[j].shape[0]):
+                    #     next_states_pred[j].append()
+                    # next_states_pred[j] = ca.vertcat(*next_states_pred[j])
+                    next_states_pred[j] = sol.value(opt_states[j])
                     for k in range(n_obs):
                         bias_sols[k][mode_map((j,k))] = sol.value(opt_bias_mm[k][mode_map((j,k))])
-                else:
-                    for k in range(n_obs):
-                        bias_sols[k][j] = sol.value(opt_bias_mm[k][j])
+                    
+
+            else:
+                u_res = [sol.value(opt_controls[j]) for j in range(scene_modes)] 
+                # next_states_pred = sol.value(opt_states)
+                next_states_pred = [[ca.DM(current_state).T] for j in range(scene_modes)]
+                rob_u_sol   = sol.value(rob_u)
+                bias_sols = [[None for j in range(scene_modes)] for k in range(n_obs)]
+                # obca_sols  = [[None for j in range(self.num_modes)] for k in range(n_obs)]
+                for j in range(scene_modes):
+                    # for t in range(u_res[j].shape[0]):
+                    #     next_states_pred[j].append()
+                    # next_states_pred[j] = ca.vertcat(*next_states_pred[j])
+                    next_states_pred[j] = sol.value(opt_states[j])
+                    if clusters is None:
+                        for k in range(n_obs):
+                            bias_sols[k][mode_map((j,k))] = sol.value(opt_bias_mm[k][mode_map((j,k))])
+                    else:
+                        for k in range(n_obs):
+                            bias_sols[k][j] = sol.value(opt_bias_mm[k][j])
+                        
                     # if type(self.prev_controls[agent_id])==type({}):
                     #     lmbd_l = self.prev_controls[agent_id]['obca_lmbd'][k][mode_map((j,k))]
                     # else:
@@ -624,6 +656,7 @@ class MM_MPC_TI(MPC_Base):
                 else:
                     # current_state = np.array(self.current_state[agent_id])
                     # next_state = self.shift_movement(current_state, u[0], self.f_np)
+                    
                     Sim.step(u[0][0,:])
                     next_state = Sim.ev.traj[:,Sim.t]
                     self.prediction_cache[agent_id] = next_states_pred
