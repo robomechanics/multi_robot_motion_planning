@@ -24,7 +24,7 @@ class MM_MPC_TI(MPC_Base):
         x_{i|t}= state prediction of kth vehicle at time step i, given current time t
         """ 
         
-        v_sched = lambda v_x : 0.2 if v_x < 2 else 2
+        v_sched = lambda v_x : 0.001 if v_x < 2 else 0.1
   
 
         E = 0.001*ca.DM.eye(3)
@@ -115,7 +115,7 @@ class MM_MPC_TI(MPC_Base):
         # opti.solver('proxqp', {'error_on_fail':False}, {'verbose':False, 'max_iter':500})
         opts = {
             # "PreQLinearize": 1,
-            # "gurobi.PreSparsify": 1,
+            "gurobi.PreSparsify": 1,
             # "gurobi.NumericFocus": 1,
             # "gurobi.Method": -1,
             # "gurobi.Threads": 8,
@@ -224,15 +224,16 @@ class MM_MPC_TI(MPC_Base):
                 # if k > self.robust_horizon:
                 # robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]-opt_xs.T), Q, (opt_states[j][k, :]-opt_xs.T).T] 
                 #             )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) + 100000 * opt_epsilon_r[j][k]) #+ 100000 * opt_epsilon_o[k]
-                robot_cost = robot_cost + mode_weight*(-10*opt_states[j][k,0]
-                    + .001*ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) ) #+ 100000 * opt_epsilon_r[j][k]) 
+                robot_cost = robot_cost + mode_weight*(-2*opt_states[j][k,0]
+                    + 100*ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) ) #+ 100000 * opt_epsilon_r[j][k]) 
                 if k>0:
-                    robot_cost+= 10000*mode_weight*(opt_controls[j][k-1,:]-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
-                    robot_cost+= 10*mode_weight*(opt_states[j][k-1,2] - opt_states[j][k,2])**2
+                    robot_cost+= 10*mode_weight*(opt_controls[j][k-1,:]-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
+                    robot_cost+= 1000*mode_weight*(opt_states[j][k-1,2] - opt_states[j][k,2])**2
                     
                 opti.subject_to(opti.bounded(-1, v[j], 6))#self.v_lim))
-            opti.subject_to(opti.bounded(-8, a[j], 3))
+            opti.subject_to(opti.bounded(-15, a[j], 3))
             opti.subject_to(opti.bounded(-2.5, ey[j], 2.5))
+            opti.subject_to(opti.bounded(-7, opt_controls[j][:self.N-1,0]-opt_controls[j][1:self.N,0], 7))
             
             num_constr+= 3*self.N*2
       
@@ -385,8 +386,12 @@ class MM_MPC_TI(MPC_Base):
                         
                         
                         # obs_avoid_lin_ref+=(ev_global_pos[:,t]-self.pos_tvs[k][m][:,t])/((self.ev_global_pos[:,t]-self.pos_tvs[k][m][:,t]).T@self.agg_Q[k][m][t-1]@(self.ev_global_pos[:,t]-self.pos_tvs[k][m][:,t]))**(0.5)
-                        obs_avoid_lin_ref=prediction[:,t]+(ev_global_pos[:,t]-prediction[:,t])/\
-                            ((ev_global_pos[:,t]-prediction[:,t]).T@agg_Q[k][j][t-1]@(ev_global_pos[:,t]-prediction[:,t]))**(0.5)
+                        if k == 0:
+                            ev_ref = ev_global_pos[:,t]
+                        else:
+                            ev_ref = ev_global_pos[:,1]
+                        obs_avoid_lin_ref=prediction[:,t]+(ev_ref-prediction[:,t])/\
+                            ((ev_ref-prediction[:,t]).T@agg_Q[k][j][t-1]@(ev_ref-prediction[:,t]))**(0.5)
                         # if j == 0 and k == 0 :
                         #     print(obs_avoid_lin_ref)
                         # Coefficient of random variables in affine chance constraint
@@ -440,8 +445,14 @@ class MM_MPC_TI(MPC_Base):
                         for t in range(1,self.N):
                             # if t==1:
                             #     print(f"Cluster {j}, Scenario {s_idx}, Obstacle {k}, Time {t} ")
-                            obs_avoid_lin_ref=prediction[:,t]
-                            obs_avoid_lin_ref+=(ev_global_pos[:,t]-obs_avoid_lin_ref)/((ev_global_pos[:,t]-obs_avoid_lin_ref).T@agg_Q[k][scen[k]][t-1]@(ev_global_pos[:,t ]-obs_avoid_lin_ref))**(0.5)
+                            if k == 0:
+                                ev_ref = ev_global_pos[:,t]
+                            else:
+                                ev_ref = ev_global_pos[:,1]
+                            obs_avoid_lin_ref=prediction[:,t]+(ev_ref-prediction[:,t])/\
+                                ((ev_ref-prediction[:,t]).T@agg_Q[k][j][t-1]@(ev_ref-prediction[:,t]))**(0.5)
+                            # obs_avoid_lin_ref=prediction[:,t]
+                            # obs_avoid_lin_ref+=(ev_global_pos[:,t]-obs_avoid_lin_ref)/((ev_global_pos[:,t]-obs_avoid_lin_ref).T@agg_Q[k][scen[k]][t-1]@(ev_global_pos[:,t]-obs_avoid_lin_ref))**(0.5)
                             
                             lin_dist = (obs_avoid_lin_ref-prediction[:,t]).T
                             noise_coeff = ca.horzcat(jac_ev_pos[t-1]@(E[3*t:3*(t+1):2,:]),*[jac_ev_pos[t-1]@B[3*t:3*(t+1):2,:]@pol_gains[l][j]@E_obs[l][scen[l]][:2*self.N,:]-int(l==k)*(jac_tv_pos[k][scen[k]][t-1]@E_obs[k][scen[k]][2*t,:]) for l in range(n_obs)])
@@ -666,8 +677,8 @@ class MM_MPC_TI(MPC_Base):
                 
                 print("Agent state: ", Sim.ev.traj[:,Sim.t], " Agent control: ", u[0].T)
                 print("Agent pos: ", Sim.ev.traj_glob[:,Sim.t-1])
-                print("TV pos: ", Sim.tvs[0].traj_glob[:, Sim.t-1])
-                print("Ped pos: ", Sim.peds[0].traj_glob[:, Sim.t-1])
+                # print("TV pos: ", Sim.tvs[0].traj_glob[:, Sim.t-1])
+                # print("Ped pos: ", Sim.peds[0].traj_glob[:, Sim.t-1])
                 # print(f"")
             self.num_timestep += 1
             time_2 = time.time()

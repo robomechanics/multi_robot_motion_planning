@@ -638,7 +638,7 @@ class Simulator():
                 mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T
                 E, V =np.linalg.eigh(mat)
                 S=np.diag((E**(-0.5)+1.2)**(-2))
-                Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=5 else (1/0.1**2)*np.eye(2)
+                Qs[i][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=10 else (1/0.1**2)*np.eye(2)
                 # Qs[i][t]  = Rtv.T@Rev
                 
         mm_o      = [[copy.deepcopy(o[i]) for _ in range(self.n_modes[i])] for i,v in enumerate(self.agents) if v!=self.ev]
@@ -731,7 +731,7 @@ class Simulator():
                         mat=Rev@iSev@Rtv.T@self.agents[i].S@self.agents[i].S@Rtv@iSev@Rev.T 
                         E, V =np.linalg.eigh(mat)
                         S=np.diag((E**(-0.5)+1.2)**(-2))
-                        mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=3 else (1/0.1**2)*np.eye(2)
+                        mm_Qs[i][n][t]=Sev@Rev.T@V@S@V.T@Rev@Sev if t <=10 else (1/0.1**2)*np.eye(2)
                         # mm_Qs[i][n][t]  = Rtv.T@Rev
 
         return x, x_glob, dx_glob, mm_o_glob, mm_u_tvs, mm_routes, mm_droutes, mm_Qs, Revs, mm_tv_cov, mm_tv_glob_cov
@@ -1174,10 +1174,10 @@ class Simulator():
             v_pos=v.traj_glob[:,i] if v.role!="EV" else v.traj2d_glob[:,i]
    
             if v.role!="ped":
-                v_shapes.append(Rectangle((0.-2.7,0.-1.4),5.4,2.8,linewidth=1., ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))
+                v_shapes.append(Rectangle((0.-2.5,0.-1.25),5.,2.5,linewidth=.1, ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))
             else:
                 
-                v_shapes.append(Rectangle((0.-.4,0.-.4),.8,.8,linewidth=1., ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))
+                v_shapes.append(Rectangle((0.-.25,0.-.25),.5,.5,linewidth=1., ec='k', fc=v_color[v.role], alpha = v_alpha[v.role]))
                 
             v_shapes[-1].set_transform(_tf(v_pos)+ax.transData)
             ax.add_patch(v_shapes[-1])

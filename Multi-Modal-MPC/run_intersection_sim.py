@@ -28,8 +28,8 @@ cost_func_params = {
 }
 mpc_params = {
     'num_agents': 1,
-    'dt': 0.2,
-    'N' : 10,
+    'dt': 0.15,
+    'N' : 8,
     'rob_dia': 0.3,
     'v_lim': 8.0,
     'omega_lim': 1.0,
@@ -48,11 +48,12 @@ static_obs = []
 obs = {"static": static_obs, "dynamic": obs_traj}
 
 
-num_trials = 5
-algs = ["SM-MPC"]#, "MM-MPC", "Branch-MPC", "Robust-MPC"]
-# algs = ["MM-MPC", 'SM-MPC']
+num_trials = 10
+# algs = ["SM-MPC"]#, "MM-MPC", "Branch-MPC", "Robust-MPC"]
+algs = ["MM-MPC", 'SM-MPC', 'Branch-MPC', 'Robust-MPC']
 # algs = ["Branch-MPC"]
 branch_times = [2, 4, 8]
+clusters     = [2, 3, 4]
 noise_levels = [0.1, 0.2, 0.3]
 make_plots = False
 if make_plots:
@@ -61,26 +62,36 @@ if make_plots:
     plot_algorithm_comparison_results(results)
     # "pass"
 else:
-    for noise_level in noise_levels:
-        for bt in branch_times:
-            for trial in range(num_trials):
-                uncontrolled_fleet = UncontrolledAgent(init_state=[(0, 0, -np.pi/2)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=0.2)
-                uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
-                for alg in algs:
-                    ev_noise_std=[0.01,0.01]
-                    ev=Agent2D(role='EV', cl=3, state=np.array([45, 6.5 + random.uniform(-0.5,0.5), 0.
+    for noise_level in noise_levels[:1]:
+        # for bt in branch_times[:1]:
+        bt =2
+        uncontrolled_fleet = UncontrolledAgent(init_state=[(0, 0, -np.pi/2)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=0.2)
+        uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
+        for cl in clusters:
+            for alg in algs:
+                if cl > clusters[0] and alg!="SM-MPC":
+                    continue
+                for trial in range(num_trials):
+                    ev_noise_std=[0.00001,0.00001]
+                    ev=Agent2D(role='EV', cl=3, state=np.array([43, 5.7 + random.uniform(-0.1,0.1), 0.
                                                                 ]), dt = mpc_params['dt'], noise_std=ev_noise_std)
                     tv_noise_std=[noise_level]*2
-                    agents=[Agent(role='TV', cl=4, dt = mpc_params['dt'], state=np.array([20, 0.1]), noise_std=tv_noise_std) for i in range(1)]
-                    agents.append(Agent(role='ped', cl=7, dt = mpc_params['dt'], state=np.array([0., 4.5+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 8+random.uniform(-0.5,0.5)))
-                    # agents.append(Agent(role='ped', cl=9, state=np.array([0., 2.+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 12+random.uniform(-0.5,0.5)))
-
+                    agents=[Agent(role='TV', cl=4, dt = mpc_params['dt'], state=np.array([0, 2]), noise_std=tv_noise_std) for i in range(1)]
+                    agents.append(Agent(role='ped', cl=7, dt = mpc_params['dt'], state=np.array([.5, 1.2+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 8+random.uniform(-0.5,0.5)))
+                    # # agents.append(Agent(role='ped', cl=9, state=np.array([0., 2.+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 12+random.uniform(-0.5,0.5)))
+                    # agents=[Agent(role='TV', cl=4, dt = mpc_params['dt'], state=np.array([6, 0.1]), noise_std=tv_noise_std) for i in range(1)]
+                    # agents= []
+                    # agents.append(Agent(role='ped', cl=7, dt = mpc_params['dt'], state=np.array([-1., 5+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 6+random.uniform(-0.5,0.5)))
+                    
                     tv_n_stds=[v.noise_std for v in agents]
                     agents.append(ev)
-                    Sim=Simulator(agents, T_FINAL=120, K_max=2)
+                    Sim=Simulator(agents, T_FINAL=120, K_max=cl)
                     
-                    Sim.set_MPC_N(10)
-                    scenario = alg + "_" + "n_" + str(noise_level) + "_b_" + str(bt)+'_v3'
+                    Sim.set_MPC_N(mpc_params['N'])
+                    if alg!= "SM-MPC":
+                        scenario = alg + "_" + "n_" + str(noise_level) + "_b_" + str(bt)+'_v3'
+                    else:
+                        scenario = alg + "_" + "n_" + str(noise_level) + "_c_" + str(cl)+'_v3'
                     
 
                     if alg in  ["MM-MPC", "SM-MPC"]:
@@ -110,6 +121,7 @@ else:
                     bitrate=1800)
 
                     # 3. Save to MP4
-                    animation.save('intersection.mp4', writer=writer)
+                    if trial == 0:
+                        animation.save(f'intersection_{scenario}.mp4', writer=writer)
 
-                    print("Saved animation to intersection.mp4")
+                    print(f"Saved animation for {scenario}")

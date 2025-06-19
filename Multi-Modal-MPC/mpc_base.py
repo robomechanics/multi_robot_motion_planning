@@ -22,7 +22,7 @@ class MPC_Base:
         self.epsilon_r = mpc_params['epsilon_r']
         self.safety_margin = mpc_params['safety_margin']
         self.linearized_ca = mpc_params['linearized_ca']
-        self.prob_thresh   = 0.05#mpc_params['mode_conf_prob_thresh']
+        self.prob_thresh   = 0.03#mpc_params['mode_conf_prob_thresh']
         self.initial_state = initial_state
         self.final_state = final_state
         self.cost_func_params = cost_func_params
