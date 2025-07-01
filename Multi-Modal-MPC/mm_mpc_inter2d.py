@@ -92,7 +92,7 @@ class MM_MPC_TI(MPC_Base):
                 TB_tv[t*2:(t+1)*2,:]=A@TB_tv[(t-1)*2:t*2,:]
                 TB_tv[t*2:(t+1)*2,t-1:t]=B
                 E_tv[t*2:(t+1)*2,:]=A@E_tv[(t-1)*2:t*2,:]    
-                E_tv[t*2:(t+1)*2,(t-1)*2:t*2]=E**(1-1/2*(1-self.feedback))
+                E_tv[t*2:(t+1)*2,(t-1)*2:t*2]=E#**(1-1/2*(1-self.feedback))
 
         c_tv=TB_tv@u_tvs.T             
 
@@ -132,6 +132,7 @@ class MM_MPC_TI(MPC_Base):
         mm_input_vector        = update_dict['u_tvs']
         obs_dims               = update_dict['sizes']
         noise_chars = update_dict['noise_std']
+        mode_probabilities = update_dict.get('mode_probabilities', None)
         n_obs = len(gmm_predictions_vector)
         from itertools import product
         mode_combos =list(product(*[list(range(self.num_modes)) for _ in range(n_obs)]))
@@ -217,8 +218,32 @@ class MM_MPC_TI(MPC_Base):
         
     
 
-        mode_prob = [(1/self.num_modes)**n_obs for j in range(scene_modes)]
+        # Use updated mode probabilities if available, otherwise fall back to uniform
+        if mode_probabilities is not None:
+            # Calculate joint probabilities for each scene mode
+            mode_prob = []
+            for j in range(scene_modes):
+                if clusters is None or not clusters:
+                    # For MM-MPC: multiply individual mode probabilities
+                    joint_prob = 1.0
+                    for k in range(n_obs):
+                        mode_idx = mode_map((j, k))
+                        if mode_idx < len(mode_probabilities[k]):
+                            joint_prob *= mode_probabilities[k][mode_idx]
+                        else:
+                            joint_prob *= 1.0 / self.num_modes  # fallback
+                    mode_prob.append(joint_prob)
+                else:
+                    # For SM-MPC: use cluster probabilities
+                    mode_prob.append(1.0 / len(clusters))  # uniform within clusters
+        else:
+            # Fallback to uniform probabilities if not available
+            mode_prob = [(1/self.num_modes)**n_obs for j in range(scene_modes)]
+        
+        print(f"MPC using mode probabilities: {mode_prob}")
+        
         for j in range(scene_modes):
+            # robot_cost += 10000*(opt_states[j][-1,0] - 110)**2
             for k in range(self.N):
                 mode_weight = mode_prob[mode_map((j,0))]
                 # if k > self.robust_horizon:
@@ -227,13 +252,16 @@ class MM_MPC_TI(MPC_Base):
                 robot_cost = robot_cost + mode_weight*(-2*opt_states[j][k,0]
                     + 100*ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) ) #+ 100000 * opt_epsilon_r[j][k]) 
                 if k>0:
-                    robot_cost+= 10*mode_weight*(opt_controls[j][k-1,:]-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
+                    robot_cost+= 10000*mode_weight*(opt_controls[j][k-1,:]-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
                     robot_cost+= 1000*mode_weight*(opt_states[j][k-1,2] - opt_states[j][k,2])**2
+                else:
+                    robot_cost+= 10000*mode_weight*(ca.DM(1,2)-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
+                    robot_cost+= 1000*mode_weight*( current_state[2]- opt_states[j][k,2])**2
                     
                 opti.subject_to(opti.bounded(-1, v[j], 6))#self.v_lim))
-            opti.subject_to(opti.bounded(-15, a[j], 3))
+            opti.subject_to(opti.bounded(-10, a[j], 3))
             opti.subject_to(opti.bounded(-2.5, ey[j], 2.5))
-            opti.subject_to(opti.bounded(-7, opt_controls[j][:self.N-1,0]-opt_controls[j][1:self.N,0], 7))
+            opti.subject_to(opti.bounded(-5, opt_controls[j][:self.N-1,0]-opt_controls[j][1:self.N,0], 5))
             
             num_constr+= 3*self.N*2
       
@@ -245,7 +273,6 @@ class MM_MPC_TI(MPC_Base):
         ## aij = (pi - pj) / ||pi - pj|| and bij = ri + rj 
         ## aij^T(pi - pj) - bij >= erf^-1(1 - 2delta)sqrt(2*aij^T(sigma_i + sigma_j)aij)    
         
-
         if self.feedback:
             K_rob_horizon = [opti.variable(2,2) for t in range(self.robust_horizon-1)]
             num_dec_var+= (self.robust_horizon-1)*2*2
@@ -266,7 +293,6 @@ class MM_MPC_TI(MPC_Base):
                     u_tv = mm_u_tv[mode]
             
                     covariances = ca.diag(noise_chars[k])
-                    
 
                     if self.feedback:
                         K = K_rob_horizon+[opti.variable(2,2) for t in range(self.N-self.robust_horizon)]
@@ -277,7 +303,7 @@ class MM_MPC_TI(MPC_Base):
                     K_stack=ca.diagcat(ca.DM(2,2),*[K[t] for t in range(self.N-1)]) 
                     obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
         
-                    total_cost+= 100*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
+                    total_cost+= 0.5*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
 
                     pol_gains_k.append(K_stack)
             
@@ -340,7 +366,7 @@ class MM_MPC_TI(MPC_Base):
                         obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
                         obs_xy_cov = ca.diagcat(*[ covariances[:2,:2] for i in range(self.N)])
             
-                        total_cost+= 100*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
+                        total_cost+= 0.5*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
                         
                         pol_gains[k][j] = K_stack
                         
@@ -389,7 +415,7 @@ class MM_MPC_TI(MPC_Base):
                         if k == 0:
                             ev_ref = ev_global_pos[:,t]
                         else:
-                            ev_ref = ev_global_pos[:,1]
+                            ev_ref = ev_global_pos[:,t]
                         obs_avoid_lin_ref=prediction[:,t]+(ev_ref-prediction[:,t])/\
                             ((ev_ref-prediction[:,t]).T@agg_Q[k][j][t-1]@(ev_ref-prediction[:,t]))**(0.5)
                         # if j == 0 and k == 0 :
@@ -448,9 +474,9 @@ class MM_MPC_TI(MPC_Base):
                             if k == 0:
                                 ev_ref = ev_global_pos[:,t]
                             else:
-                                ev_ref = ev_global_pos[:,1]
+                                ev_ref = ev_global_pos[:,t]
                             obs_avoid_lin_ref=prediction[:,t]+(ev_ref-prediction[:,t])/\
-                                ((ev_ref-prediction[:,t]).T@agg_Q[k][j][t-1]@(ev_ref-prediction[:,t]))**(0.5)
+                                ((ev_ref-prediction[:,t]).T@agg_Q[k][scen[k]][t-1]@(ev_ref-prediction[:,t]))**(0.5)
                             # obs_avoid_lin_ref=prediction[:,t]
                             # obs_avoid_lin_ref+=(ev_global_pos[:,t]-obs_avoid_lin_ref)/((ev_global_pos[:,t]-obs_avoid_lin_ref).T@agg_Q[k][scen[k]][t-1]@(ev_global_pos[:,t]-obs_avoid_lin_ref))**(0.5)
                             
@@ -518,7 +544,7 @@ class MM_MPC_TI(MPC_Base):
         opti.set_value(opt_xs, ca.vertcat(self.final_state[agent_id],0))
 
         # set optimizing target withe init guess
-        if type(self.prev_controls[agent_id])==type({}):
+        if type(self.prev_controls[agent_id])==type({}) and 'rob_u' in self.prev_controls[agent_id]:
             rob_u_init = self.prev_controls[agent_id]['rob_u']
             opti.set_initial(rob_u, rob_u_init)
             for k in range(n_obs):
@@ -626,7 +652,7 @@ class MM_MPC_TI(MPC_Base):
             # pool = mp.Pool()
     
             # Apply MPC solve to each agent in parallel
-            if type(self.prev_controls[0]) ==type({}):
+            if type(self.prev_controls[0]) == type({}) and 'control' in self.prev_controls[0]:
                 u_ws = self.prev_controls[0]['control'][0]
             else:
                 
@@ -657,6 +683,7 @@ class MM_MPC_TI(MPC_Base):
                     u = [np.hstack([-5*np.ones((self.N, 1)), np.zeros((self.N,1))])]
                     current_state = Sim.ev.traj[:,Sim.t]
                     Sim.step(np.array([-5.0, 0]))
+                    Sim.infeas_status.append(True)
                     next_state = Sim.ev.traj[:,Sim.t]
 
                     self.prediction_cache[agent_id] = next_states_pred
@@ -667,7 +694,7 @@ class MM_MPC_TI(MPC_Base):
                 else:
                     # current_state = np.array(self.current_state[agent_id])
                     # next_state = self.shift_movement(current_state, u[0], self.f_np)
-                    
+                    Sim.infeas_status.append(False)
                     Sim.step(u[0][0,:])
                     next_state = Sim.ev.traj[:,Sim.t]
                     self.prediction_cache[agent_id] = next_states_pred

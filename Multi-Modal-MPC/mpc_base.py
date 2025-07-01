@@ -30,7 +30,7 @@ class MPC_Base:
         self.trial = trial
         self.uncontrolled_fleet = uncontrolled_fleet
         self.uncontrolled_fleet_data = uncontrolled_fleet_data
-        self.delta = 0.1
+        self.delta = 0.01
         self.num_clusters = num_clusters
         self.num_modes = 3
         self.robust_horizon = robust_horizon
@@ -47,11 +47,12 @@ class MPC_Base:
         # self.prev_controls = {agent_id: np.zeros((self.N, 2)) for agent_id in range(self.num_agent)}
         # self.prev_epsilon_o = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
         # self.prev_epsilon_r = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
-        self.prev_states = {agent_id: np.zeros((self.N+1, 2)) for agent_id in range(self.num_agent)}
-        self.prev_controls = {agent_id: np.zeros((self.N, 1)) for agent_id in range(self.num_agent)}
+        
+        # Initialize as empty dictionaries for MM-MPC compatibility
+        self.prev_states = {agent_id: {} for agent_id in range(self.num_agent)}
+        self.prev_controls = {agent_id: {} for agent_id in range(self.num_agent)}
         self.prev_epsilon_o = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
         self.prev_epsilon_r = {agent_id: np.zeros((self.N+1, 1)) for agent_id in range(self.num_agent)}
-        
         
         self.heatmaps = []
         self.current_state = {}

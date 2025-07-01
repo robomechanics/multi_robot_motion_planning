@@ -420,6 +420,12 @@ def summarize_algorithm_comparison_results(folder_path):
             max_avg_comp_time = 0
             max_max_comp_time = 0
 
+            # Collect individual trial data for error bars
+            individual_infeasible_ratios = []
+            individual_avg_comp_times = []
+            individual_max_comp_times = []
+            individual_task_completion_times = []
+
             for file in os.listdir(os.path.join(folder_path, subfolder)):
                 if file.endswith('.pkl'):
                     with open(os.path.join(folder_path, subfolder, file), 'rb') as f:
@@ -430,11 +436,27 @@ def summarize_algorithm_comparison_results(folder_path):
                         #     unsuccessful_trials += 1
                         # else:
                         # Process normally if success is True
-                        num_timesteps += data['num_timesteps']
-                        infeasible_count += data['infeasible_count']
-                        avg_comp_time += np.mean(data['avg_comp_time'])
-                        max_comp_time += np.mean(data['max_comp_time'])
+                        trial_timesteps = data['num_timesteps']
+                        trial_infeasible_count = data['infeasible_count']
+                        trial_avg_comp_time = np.mean(data['avg_comp_time'])
+                        trial_max_comp_time = np.mean(data['max_comp_time'])
+                        
+                        num_timesteps += trial_timesteps
+                        infeasible_count += trial_infeasible_count
+                        avg_comp_time += trial_avg_comp_time
+                        max_comp_time += trial_max_comp_time
                         num_trials += 1
+
+                        # Store individual trial data for error bars
+                        if trial_timesteps > 0:
+                            individual_infeasible_ratios.append((trial_infeasible_count / trial_timesteps) * 100)
+                            individual_task_completion_times.append(trial_timesteps * 0.2)
+                        else:
+                            individual_infeasible_ratios.append(fallback_values['infeasibility_ratio'])
+                            individual_task_completion_times.append(fallback_values['task_completion_time'])
+                        
+                        individual_avg_comp_times.append(trial_avg_comp_time)
+                        individual_max_comp_times.append(trial_max_comp_time)
 
                         # # Update the maximum values seen so far
                         # max_infeasible_count = max(max_infeasible_count, data['infeasible_count'])
@@ -449,7 +471,7 @@ def summarize_algorithm_comparison_results(folder_path):
             
             # Calculate averages and ratios
             # if num_trials > 0:
-            infeasible_ratio = infeasible_count / num_timesteps if num_timesteps > 0 else fallback_values['infeasibility_ratio']
+            infeasible_ratio = (infeasible_count / num_timesteps * 100) if num_timesteps > 0 else fallback_values['infeasibility_percentage']
             task_completion_time = (num_timesteps / num_trials) * 0.2 if num_timesteps > 0 else fallback_values['task_completion_time']
             avg_comp_time = avg_comp_time / num_trials
             max_comp_time = max_comp_time / num_trials
@@ -460,6 +482,12 @@ def summarize_algorithm_comparison_results(folder_path):
             #     task_completion_time = fallback_values['task_completion_time']
             #     avg_comp_time = fallback_values['avg_comp_time']
             #     max_comp_time = fallback_values['max_comp_time']
+
+            # Calculate standard errors for error bars
+            infeasible_ratio_std = np.std(individual_infeasible_ratios) / np.sqrt(len(individual_infeasible_ratios)) if len(individual_infeasible_ratios) > 1 else 0
+            avg_comp_time_std = np.std(individual_avg_comp_times) / np.sqrt(len(individual_avg_comp_times)) if len(individual_avg_comp_times) > 1 else 0
+            max_comp_time_std = np.std(individual_max_comp_times) / np.sqrt(len(individual_max_comp_times)) if len(individual_max_comp_times) > 1 else 0
+            task_completion_time_std = np.std(individual_task_completion_times) / np.sqrt(len(individual_task_completion_times)) if len(individual_task_completion_times) > 1 else 0
 
             # Initialize dictionary structure if needed
             if noise_level not in results:
@@ -472,6 +500,12 @@ def summarize_algorithm_comparison_results(folder_path):
             results[noise_level][algorithm]['task_completion_time'] = task_completion_time
             results[noise_level][algorithm]['avg_comp_time'] = avg_comp_time
             results[noise_level][algorithm]['max_comp_time'] = max_comp_time
+            
+            # Store standard errors for error bars
+            results[noise_level][algorithm]['infeasible_ratio_std'] = infeasible_ratio_std
+            results[noise_level][algorithm]['avg_comp_time_std'] = avg_comp_time_std
+            results[noise_level][algorithm]['max_comp_time_std'] = max_comp_time_std
+            results[noise_level][algorithm]['task_completion_time_std'] = task_completion_time_std
 
     return results
 
@@ -553,10 +587,15 @@ def compute_average_norm(feedback_gain_map):
     return average_norm
 
 def plot_algorithm_comparison_results(results):
-    algorithm_order = ["MM-MPC", "Branch-MPC", "Robust-MPC"]
+    algorithm_order = ["SM-MPC", "MM-MPC", "Branch-MPC", "Robust-MPC"]
     data_types = ['infeasible_ratio', 'task_completion_time', 'avg_comp_time', 'max_comp_time', 'control_mag_avg']
     colors = ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7']
-    titles = ["Infeasible Solve Ratio", "Task Completion Time", "Average Computation Time", "Max Computation Time", "Average Velocity"]
+    titles = ["Infeasible Solve Percentage", "Task Completion Time", "Average Computation Time", "Max Computation Time", "Average Velocity"]
+
+    # Check if figures folder exists, create it if it doesn't
+    figures_folder = "figures"
+    if not os.path.exists(figures_folder):
+        os.makedirs(figures_folder)
 
     # Sort the noise levels in increasing order and ensure they are unique
     noise_levels = sorted({float(noise_level) for noise_level in results.keys()})
@@ -572,17 +611,38 @@ def plot_algorithm_comparison_results(results):
         for j, algorithm in enumerate(algorithm_order):
             # Collect data for this algorithm across all noise levels for the specific data type
             performance = []
+            error_bars = []
+            
             for noise_level in noise_levels:
                 if algorithm in results[str(noise_level)]:
                     performance.append(results[str(noise_level)][algorithm].get(data_type, 0))
+                    
+                    # Add error bars for specific metrics (excluding infeasible_ratio since it's a percentage)
+                    if data_type in ['avg_comp_time', 'max_comp_time', 'task_completion_time']:
+                        std_key = f'{data_type}_std'
+                        error_bars.append(results[str(noise_level)][algorithm].get(std_key, 0))
+                    else:
+                        error_bars.append(0)  # No error bar for other metrics
                 else:
                     performance.append(0)
+                    error_bars.append(0)
+                    
             bar_positions = index + offset + j * bar_width
-            plt.bar(bar_positions, performance, bar_width, label=algorithm, color=colors[j % len(colors)])
+            
+            # Plot bars with error bars for specific metrics (excluding infeasible_ratio)
+            if data_type in ['avg_comp_time', 'max_comp_time', 'task_completion_time']:
+                plt.bar(bar_positions, performance, bar_width, label=algorithm, 
+                       color=colors[j % len(colors)], yerr=error_bars, capsize=5)
+            else:
+                plt.bar(bar_positions, performance, bar_width, label=algorithm, 
+                       color=colors[j % len(colors)])
 
         # Configure the plot
         plt.xlabel('Noise Level')
-        plt.ylabel(data_type.replace('_', ' ').title())
+        if data_type == 'infeasible_ratio':
+            plt.ylabel('Infeasible Solve Percentage (%)')
+        else:
+            plt.ylabel(data_type.replace('_', ' ').title())
         plt.title(titles[i])
         # plt.title(f'{data_type.replace("_", " ").title()}')
         plt.xticks(index + 0.4, [str(n) for n in noise_levels])
@@ -590,8 +650,7 @@ def plot_algorithm_comparison_results(results):
 
         plt.tight_layout()
         # plt.show()
-        plt.savefig(f'./{data_type}.png')
-        
+        plt.savefig(os.path.join(figures_folder, f'{data_type}.png'))
 
 def plot_ablation_comparison_results(results):
     metrics = ['infeasible_ratio', 'avg_comp_time', 'max_comp_time', 'control_mag_avg']

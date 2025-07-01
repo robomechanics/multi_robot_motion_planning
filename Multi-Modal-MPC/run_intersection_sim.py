@@ -8,6 +8,8 @@ from uncontrolled_agent import UncontrolledAgent
 from utils import *
 from path_planner import calc_spline_course
 
+import random
+
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.transforms as tf
@@ -28,8 +30,8 @@ cost_func_params = {
 }
 mpc_params = {
     'num_agents': 1,
-    'dt': 0.15,
-    'N' : 8,
+    'dt': 0.2,
+    'N' : 12,
     'rob_dia': 0.3,
     'v_lim': 8.0,
     'omega_lim': 1.0,
@@ -48,14 +50,15 @@ static_obs = []
 obs = {"static": static_obs, "dynamic": obs_traj}
 
 
-num_trials = 10
+num_trials = 1
 # algs = ["SM-MPC"]#, "MM-MPC", "Branch-MPC", "Robust-MPC"]
 algs = ["MM-MPC", 'SM-MPC', 'Branch-MPC', 'Robust-MPC']
+# algs = ["MM-MPC"]
 # algs = ["Branch-MPC"]
-branch_times = [2, 4, 8]
-clusters     = [2, 3, 4]
-noise_levels = [0.1, 0.2, 0.3]
-make_plots = False
+branch_times = [2]
+clusters     = [2]
+noise_levels = [0.1]
+make_plots = True
 if make_plots:
     results = summarize_algorithm_comparison_results("mm_results")
     # import pdb; pdb.set_trace()
@@ -73,11 +76,11 @@ else:
                     continue
                 for trial in range(num_trials):
                     ev_noise_std=[0.00001,0.00001]
-                    ev=Agent2D(role='EV', cl=3, state=np.array([43, 5.7 + random.uniform(-0.1,0.1), 0.
+                    ev=Agent2D(role='EV', cl=3, state=np.array([45, 5.7 + random.uniform(-0.2,0.2), 0.
                                                                 ]), dt = mpc_params['dt'], noise_std=ev_noise_std)
                     tv_noise_std=[noise_level]*2
-                    agents=[Agent(role='TV', cl=4, dt = mpc_params['dt'], state=np.array([0, 2]), noise_std=tv_noise_std) for i in range(1)]
-                    agents.append(Agent(role='ped', cl=7, dt = mpc_params['dt'], state=np.array([.5, 1.2+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 8+random.uniform(-0.5,0.5)))
+                    agents=[Agent(role='TV', cl=random.choice([1,4]), dt = mpc_params['dt'], state=np.array([0, 2+ random.uniform(-0.5,0.5)]), noise_std=tv_noise_std) for i in range(1)]
+                    agents.append(Agent(role='ped', cl=6, dt = mpc_params['dt'], state=np.array([.0+random.uniform(-0.05,0.1), 2.5+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 8+random.uniform(-0.5,0.5)))
                     # # agents.append(Agent(role='ped', cl=9, state=np.array([0., 2.+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 12+random.uniform(-0.5,0.5)))
                     # agents=[Agent(role='TV', cl=4, dt = mpc_params['dt'], state=np.array([6, 0.1]), noise_std=tv_noise_std) for i in range(1)]
                     # agents= []
@@ -108,20 +111,20 @@ else:
                     mpc.simulate(Sim)
                     
                     print(f"Finished algorithm {alg}, trial {trial}, noise level {noise_level}")
-
-                    fig, ax= plt.subplots()
-                    camera = Camera(fig)
-                    for  i in range(Sim.t):
-                        Sim.draw_intersection(ax, i)
-                        camera.snap()
-                    animation = camera.animate(repeat = True, repeat_delay = 100)
-                    writer = FFMpegWriter(
-                    fps=15,                    # frames per second
-                    metadata=dict(artist='You'),
-                    bitrate=1800)
-
-                    # 3. Save to MP4
                     if trial == 0:
-                        animation.save(f'intersection_{scenario}.mp4', writer=writer)
+                        fig, ax= plt.subplots()
+                        camera = Camera(fig)
+                        for  i in range(Sim.t):
+                            Sim.draw_intersection(ax, i)
+                            camera.snap()
+                        animation = camera.animate(repeat = True, repeat_delay = 100)
+                        writer = FFMpegWriter(
+                        fps=15,                    # frames per second
+                        metadata=dict(artist='You'),
+                        bitrate=1800)
 
-                    print(f"Saved animation for {scenario}")
+                        # 3. Save to MP4
+                        
+                        animation.save(f'videos/intersection_{scenario}.mp4', writer=writer)
+
+                        print(f"Saved animation for {scenario}")

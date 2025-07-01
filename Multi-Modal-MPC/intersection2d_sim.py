@@ -182,6 +182,7 @@ class Simulator():
         self.ped_idxs =[]
         self.mm_preds=[]
         self.ev_sols =[]
+        self.infeas_status = []
         self.viz_preds=viz_preds
         self.eval_mode = eval_mode
         
@@ -247,7 +248,7 @@ class Simulator():
                 
                 # if vh[0]>=55.0:
                 #     verbose = True
-
+                # Number 10 here is the interaction region, the higher the more conservative the policy
                 if np.abs(np.sin(float(2*psi)))<=1e-3 and vh_s-v[0]>=1. and vh_s-v[0]<=5. and self._check_out_inter(cl,v[0]) :
                     if (vh[1]>=1 and vh_s-v[0]<=10) and (1<=(v_s_on_vh - vh[0]) <= 10) and np.linalg.norm(vh_pos-v_pos)<5:
                         ds=0.01
@@ -405,8 +406,11 @@ class Simulator():
         random.seed(100)
 
         def _update_mode_probabilities(agent_i):
+            # print(f"=== _update_mode_probabilities called for Agent {agent_i} ===")
             v = self.agents[agent_i]
-            curr_pos = v.traj_glob[:2,v.t]
+            # Calculate current position using local trajectory and route function
+            # This ensures we get the correct global position even if traj_glob hasn't been updated yet
+            curr_pos = np.array(self.routes[v.cl](v.traj[0,v.t])[:2]).squeeze()
             prev_state, prev_control = v.traj[:, v.t-1], v.u[v.t-1]
             if v.role == "TV":
                 modes=[v.cl]+[ cl for cl in self.veh_modes[self.sources[v.cl]] if cl !=v.cl]
@@ -414,7 +418,14 @@ class Simulator():
                 modes=[v.cl]+[ cl for cl in self.ped_modes[self.sources[v.cl]] if cl !=v.cl]
             expected_curr_state, cov = v.get_next(prev_state,prev_control, cov = 0*np.eye(2))
             prior = self.mode_probabities[agent_i]
-            posterior = prior
+            posterior = prior.copy()  # Make a copy to avoid modifying the original
+            
+            # print(f"Agent {agent_i} - Prior probabilities: {prior}")
+            # print(f"Agent {agent_i} - Current position: {curr_pos}")
+            # print(f"Agent {agent_i} - Expected state: {expected_curr_state}")
+            # print(f"Agent {agent_i} - Initial covariance: {cov}")
+            # print(f"Agent {agent_i} - Available modes: {modes}")
+            
             for j in modes:
                 jac_glob=self.droutes[j](v.traj[0,v.t-1])[:2]
                 affine_glob_tf = ca.horzcat(jac_glob, ca.DM([0,1])).T
@@ -425,8 +436,14 @@ class Simulator():
                 likelihood_j = multivariate_normal.pdf(diff_pos, mean = np.zeros(2), cov = next_cov_glob)
                 mode_idx=modes.index(j)
                 posterior[mode_idx] = likelihood_j*prior[mode_idx]
+                
+                # print(f"Agent {agent_i} - Mode {j}: expected_pos={expected_curr_pos}, curr_pos={curr_pos}, diff_pos={diff_pos}")
+                # print(f"Agent {agent_i} - Mode {j}: cov={next_cov_glob}, likelihood={likelihood_j}, prior={prior[mode_idx]}, posterior={posterior[mode_idx]}")
             
             total = np.sum(posterior)
+            # print(f"Agent {agent_i} - Total posterior: {total}")
+            # print(f"Agent {agent_i} - Posterior array: {posterior}")
+            
             if total <= 0:
                 # If numerical underflow or all likelihoods≈0, fall back to uniform:
                 new_mode_probs = np.ones(3) / 3
@@ -434,6 +451,7 @@ class Simulator():
                 new_mode_probs = posterior / total
             
             self.mode_probabities[agent_i] = new_mode_probs
+            # print(f"Agent {agent_i} mode probabilities updated: {new_mode_probs}")
 
 
             
@@ -457,12 +475,14 @@ class Simulator():
                     
                     if np.abs(v.traj[0,v.t]-v.s_decision)<0.05:
                         if self.sources[v.cl]=="W":
-                            v.cl = random.choice([5,6])
+                            v.cl = random.choice([5,7])
                         else:
                             v.cl = random.choice([8,9])
 
                 if v.t>1:
                         _update_mode_probabilities(ind)
+
+        print(f"Timestep {self.t}: Current mode probabilities: {self.mode_probabities}")
 
         self.ev.traj_glob[:,self.ev.t]=np.array(self.routes[self.ev.cl](self.ev.traj[0,self.ev.t])[:3]).squeeze()
         x_dev, y_dev, psi_dev  = self.get_deviation(self.ev.traj[0,self.ev.t], self.ev.traj2d[-1, self.t], self.ev.u2d[-1, self.t])
@@ -514,7 +534,7 @@ class Simulator():
                      'routes': mm_routes, 'droutes': mm_droutes, 'Qs' : mm_Qs, 'noise_std' : [v.noise_std for v in self.agents if v!=self.ev],
                      'z_lin': z_lin, 'x_pos':x_pos,  'dpos': dpos, 'u_tvs': mm_u_tvs, 'route_fun': self.routes[self.ev.cl],
                      'sizes':[v.veh_dims for v in self.agents if v!=self.ev], 'Revs': Revs,
-                     'clusters': scenario_clusters}
+                     'clusters': scenario_clusters, 'mode_probabilities': self.mode_probabities}
         
         self.mm_preds.append(mm_o_glob)
 
@@ -1033,11 +1053,11 @@ class Simulator():
         
         ped_cross =[]
         # 5 : W->E (run)
-        s=np.array([0,31])
+        s=np.array([0,(31**2+3**2)**0.5])
         xs=np.array((1,32))
-        ys=np.array((26,26))
+        ys=np.array((24,27))
         psis=np.array((np.pi, np.pi))
-        vs=np.array([4, .0])
+        vs=np.array([3, 1.])
         r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -1046,11 +1066,11 @@ class Simulator():
         self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
         
         # 6 : W->E (walk)
-        s=np.array([0,31])
+        s=np.array([0,(31**2+3**2)**0.5])
         xs=np.array((1,32))
-        ys=np.array((26,26))
+        ys=np.array((24,27))
         psis=np.array((np.pi, np.pi))
-        vs=np.array([2, 0.])
+        vs=np.array([1.5, 1.])
         r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -1059,11 +1079,11 @@ class Simulator():
         self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
         
         # 7 : W->E (yield)
-        s=np.array([0,1])
-        xs=np.array((1,2))
-        ys=np.array((26,26))
+        s=np.array([0,(31**2+3**2)**0.5])
+        xs=np.array((1,32))
+        ys=np.array((24,26))
         psis=np.array((np.pi, np.pi))
-        vs=np.array([0.2, 0])
+        vs=np.array([0.5, -1])
         r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
         ped_cross.append(r_fun)
         self.droutes.append(_make_jac_fun(r_fun))
@@ -1204,6 +1224,9 @@ class Simulator():
         # ax.add_patch(ev_legend)
         # ax.text(-40,-15,f's: {self.agents[-1].traj[0,i].round(1)}, vel: {self.agents[-1].traj[1,i].round(1)}')
 
+            # === Infeasibility Status Display ===
+        if self.infeas_status[i]:
+            ax.text(-45, 45, "INFEASIBLE!!", fontsize=16, color='red', weight='bold')
 
         ax.set_xlim(-50,60)
         ax.set_ylim(-8,50)
