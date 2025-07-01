@@ -7,7 +7,7 @@ class MetricsLogger:
     def __init__(self):
         self.metrics_data = {}
 
-    def log_metrics(self, run_description, trial_num, state_cache, control_cache, map, initial_state, final_state, avg_comp_time, max_comp_time, traj_length, makespan, avg_rob_dist, c_avg, success, execution_collision, max_time_reached, infeasible_count, feedback_gain_avg, uncontrolled_fleet_data, num_timesteps):
+    def log_metrics(self, run_description, trial_num, state_cache, control_cache, map, initial_state, final_state, avg_comp_time, max_comp_time, traj_length, makespan, avg_rob_dist, c_avg, success, execution_collision, max_time_reached, infeasible_count, feedback_gain_avg, uncontrolled_fleet_data, num_timesteps, collision_probability=None):
         # Log the metrics for a specific algorithm trial
         if run_description not in self.metrics_data:
             self.metrics_data[run_description] = {}
@@ -30,8 +30,10 @@ class MetricsLogger:
                 "infeasible_count": [],
                 "feedback_gain_avg": [],
                 "uncontrolled_fleet_data": [],
-                "num_timesteps": []
+                "num_timesteps": [],
+                "collision_probability": []
             }
+        
         self.metrics_data[run_description][trial_num]["state_cache"] = state_cache
         self.metrics_data[run_description][trial_num]["control_cache"] = control_cache
         self.metrics_data[run_description][trial_num]["initial_state"] = initial_state
@@ -50,6 +52,9 @@ class MetricsLogger:
         self.metrics_data[run_description][trial_num]["feedback_gain_avg"] = feedback_gain_avg
         self.metrics_data[run_description][trial_num]["uncontrolled_fleet_data"] = uncontrolled_fleet_data
         self.metrics_data[run_description][trial_num]["num_timesteps"] = num_timesteps
+
+        if collision_probability is not None:
+            self.metrics_data[run_description][trial_num]["collision_probability"] = collision_probability
 
     def print_metrics_summary(self):
         # Returns the collected metrics data

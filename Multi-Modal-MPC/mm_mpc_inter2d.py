@@ -109,10 +109,9 @@ class MM_MPC_TI(MPC_Base):
         #                     'ipopt.warm_start_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_frac': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_slack_bound_push': 1e-9, 'ipopt.warm_start_mult_bound_push': 1e-9}
         # opts_setting = {'ipopt.max_iter':500,  'ipopt.print_level': 0, 'print_time': 0, 'ipopt.warm_start_init_point': 'yes', 'ipopt.acceptable_tol': 1e-4, 'ipopt.acceptable_obj_change_tol': 1e-3, 'ipopt.max_cpu_time' : 30.0}
         
-        # opti.minimize(total_cost)
 
         # opti.solver('ipopt', opts_setting)
-        # opti.solver('proxqp', {'error_on_fail':False}, {'verbose':False, 'max_iter':500})
+        
         opts = {
             # "PreQLinearize": 1,
             "gurobi.PreSparsify": 1,
@@ -171,8 +170,7 @@ class MM_MPC_TI(MPC_Base):
         num_dec_var+= n_obs*(self.N-self.robust_horizon)*2 
         # print(f"Decision variables after declaring bias terms: {num_dec_var}")
               
-        # opt_epsilon_r = [opti.variable(self.N, 1) for _ in range(self.num_modes)]
-        # obca_lmbd    = [[opti.variable(4,self.N-1) for _ in range(self.num_modes)] for _ in range(n_obs)]  
+          
         A_rob, B_rob, E_rob = [], [], []
         slack = opti.variable(1)
         opt_states, opt_x, opt_y, v, a, ey  = [], [], [], [], [], []
@@ -197,10 +195,6 @@ class MM_MPC_TI(MPC_Base):
             a.append(opt_controls[j])
             ey.append(opt_states[-1][:,-1])
            
-
-            # opti.subject_to(opti.bounded(0, opt_epsilon_r[j][:], 0.001))
-
-        # opt_epsilon_o = opti.variable(self.N+1, 1)
         
         # parameters
         # opt_x0 = opti.parameter(3)
@@ -393,25 +387,6 @@ class MM_MPC_TI(MPC_Base):
                     # print("Positions","TV", prediction,  "EV", ev_global_pos)
                     for t in range(1,self.N,1):
                         
-                        # A_m = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@agg_Q[k][j][t-1]
-                        
-                        # Rtv   =  Revs[t]@agg_Q[k][j][t-1].T
-                        # A_m_b = ca.DM([[1,0], [-1, 0], [0,1], [0,-1]])@Rtv.T
-                        # b_m = ca.DM([obs_dims[k][0]+0.75, obs_dims[k][0]+0.75, obs_dims[k][1]+0.5, obs_dims[k][1]+0.5]) + A_m_b@prediction[:,t]
-                        # lmbd = obca_lmbd[k][j][:,t-1]
-                        # psi = np.arcsin(Revs[t][0,1].squeeze())
-                        
-                        
-                        # if type(self.prev_controls[agent_id])==type({}):
-                        #     lmbd_l = self.prev_controls[agent_id]['obca_lmbd'][k][j][:,t-1]
-                        #     # if self.linearized_ca:
-                        #     #     lmbd_l = 0.1*ca.DM.ones(4,1)+lmbd_l
-                        # else:
-                        #     lmbd_l = 0.1*ca.DM.ones(4,1)
-                        # obs_avoid_lin_ref=prediction[:,t]
-                        
-                        
-                        # obs_avoid_lin_ref+=(ev_global_pos[:,t]-self.pos_tvs[k][m][:,t])/((self.ev_global_pos[:,t]-self.pos_tvs[k][m][:,t]).T@self.agg_Q[k][m][t-1]@(self.ev_global_pos[:,t]-self.pos_tvs[k][m][:,t]))**(0.5)
                         if k == 0:
                             ev_ref = ev_global_pos[:,t]
                         else:
@@ -449,15 +424,13 @@ class MM_MPC_TI(MPC_Base):
                             opti.subject_to(nom_dist>=0)
                             # soc = ca.soc(rv_dist, nom_dist)
                             # opti.subject_to(soc>0)
-                            # opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
-                            # opti.subject_to(nom_dist>=-0)
+
                             num_constr+= 2
         else:
             for j, cluster in enumerate(clusters):
                 obs_mode_considered = set()
                 for s_idx, scen in enumerate(cluster):
-                    # if s_idx%2!=0:
-                    #     continue
+
                     for k in range(n_obs):
                        
                         u_tv = mm_tv_u[k][scen[k]]
@@ -491,56 +464,9 @@ class MM_MPC_TI(MPC_Base):
                             # soc = ca.soc(rv_dist, nom_dist)
                             # opti.subject_to(soc>0)
                             num_constr+=2
-                        # soc = ca.soc(rv_dist, nom_dist)
-                        # opti.subject_to(soc>0)
-                        # if self.linearized_ca:
-                        #     add_var = opti.variable(1)
-                        #     nom_obca = (A_m_b@r_fun(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m])[:2]-b_m).T@lmbd-4-add_var
-                        #     opti.subject_to(nom_obca>=0)
-                        #     opti.subject_to(add_var>=0)
-                        #     # nom_obca = (A_m_b@ev_global_pos[:,t]-b_m).T@lmbd_l+(A_m_b@(jac_ev_pos[t-1]@(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m]))).T@lmbd_l\
-                        #     #     +  (A_m_b@ev_global_pos[:,t]-b_m).T@(lmbd-lmbd_l)-4
-                        #     # rv_obca  = sp.erfinv(1-self.delta)*(A_m_b@noise_coeff).T@lmbd
-                        #     rv_obca  = sp.erfinv(1-self.delta)*((A_m_b@noise_coeff_const).T@lmbd_l+(A_m_b@noise_coeff_const).T@(lmbd-lmbd_l)+(A_m_b@(noise_coeff-noise_coeff_const)).T@lmbd_l)
-                        #     soc1 = ca.soc(rv_obca, add_var)
-                        #     opti.subject_to(soc1>0)
-                        #     # opti.subject_to((A_m@r_fun(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m])[:2]-b_m).T@lmbd >= 6)
-                        #     opti.subject_to(lmbd>=0)
-                            
-                        #     soc2 = ca.soc(A_m.T@(lmbd), 1)
-                        #     opti.subject_to(soc2>0)
-                        #     # opti.subject_to(-ca.DM.ones(1,4)@A_m@A_m.T@ca.DM.ones(4,1)+ca.DM.ones(1,4)@A_m@A_m.T@lmbd <=1)
-                            
-                        
-                        
-                        # else:
-                            
-                            
-                        # nom_obca = (A_m_b@(r_fun(A[3*t,:]@ca.DM(current_state)+B[3*t,:]@ca.vec(opt_controls[m].T))[:2]+pos_dev)-b_m).T@lmbd-4.5
-                        # # nom_obca = (A_m@(ev_global_pos[:,t]+jac_ev_pos[t-1]@(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m]))-b_m).T@lmbd
-                        # rv_obca  = sp.erfinv(1-self.delta)*(A_m_b@noise_coeff).T@lmbd
-                        
-                        # opti.subject_to((A_m@r_fun(A[2*t,:]@ca.DM(current_state)+B[2*t,:]@opt_controls[m])[:2]-b_m).T@lmbd >= 6)
-                        
-                        # opti.subject_to(ca.sqrt(rv_obca.T@rv_obca+1e-6)<=nom_obca)
-                        # # opti.subject_to(rv_obca.T@rv_obca <=nom_obca**2+9-6*nom_obca)
-                        
-                        # opti.subject_to(lmbd>=0)
-                        # opti.subject_to(lmbd.T@A_m@A_m.T@lmbd <=1+slack)
                         
         
-        # num_decision_vars = opti.nx
-        # print(num_decision_vars)
-
-        # num_constraints = opti.ng
-        # print(num_constraints)
         
-        # if self.linearized_ca:
-        
-        # opti.solver('osqp', {}, {'verbose':False})
-        # else:
-        #     opti.solver('ipopt', opts_setting)
-            
         opti.set_value(opt_xs, ca.vertcat(self.final_state[agent_id],0))
 
         # set optimizing target withe init guess
@@ -553,9 +479,7 @@ class MM_MPC_TI(MPC_Base):
                 for j in range(num_modes):
                     bias_init  = self.prev_controls[agent_id]['bias'][k][j]
                     opti.set_initial(opt_bias_mm[k][j], bias_init)
-                    # obca_init  = self.prev_controls[agent_id]['obca_lmbd'][k][j]
-                    # if not self.linearized_ca:  
-                    #     opti.set_initial(obca_lmbd[k][j], obca_init)
+
                 # opti.set_initial(bias_terms[j], bias_init)  # (N, 2)
             # else:
             #     opti.set_initial(opt_controls[j], self.prev_controls[agent_id][j])
@@ -584,6 +508,8 @@ class MM_MPC_TI(MPC_Base):
                 u_res = [sol.value(opt_controls[j]) for j in range(scene_modes)]
                 # next_states_pred = sol.value(opt_states)
                 next_states_pred = [[ca.DM(current_state).T] for j in range(scene_modes)]
+
+                ev_glob_sol      = [sol.value(ca.vertcat(opt_x[j].reshape(1,-1), opt_y[j].reshape(1,-1))) for j in range(scene_modes)]
                 rob_u_sol   = sol.value(rob_u)
                 bias_sols = [[None for j in range(num_modes)] for k in range(n_obs)]
                 # obca_sols  = [[None for j in range(self.num_modes)] for k in range(n_obs)]
@@ -602,7 +528,9 @@ class MM_MPC_TI(MPC_Base):
                 next_states_pred = [[ca.DM(current_state).T] for j in range(scene_modes)]
                 rob_u_sol   = sol.value(rob_u)
                 bias_sols = [[None for j in range(scene_modes)] for k in range(n_obs)]
-                # obca_sols  = [[None for j in range(self.num_modes)] for k in range(n_obs)]
+                ev_glob_sol      = [sol.value(ca.vertcat(opt_x[j].reshape(1,-1), opt_y[j].reshape(1,-1))) for j in range(scene_modes)]
+                
+                
                 for j in range(scene_modes):
                     # for t in range(u_res[j].shape[0]):
                     #     next_states_pred[j].append()
@@ -615,17 +543,7 @@ class MM_MPC_TI(MPC_Base):
                         for k in range(n_obs):
                             bias_sols[k][j] = sol.value(opt_bias_mm[k][j])
                         
-                    # if type(self.prev_controls[agent_id])==type({}):
-                    #     lmbd_l = self.prev_controls[agent_id]['obca_lmbd'][k][mode_map((j,k))]
-                    # else:
-                    #     lmbd_l = 0.1*ca.DM.ones(4, self.N-1)
-                    # if self.linearized_ca:
-                    #     obca_sols[k][mode_map((j,k))] = sol.value(lmbd_l+obca_lmbd[k][mode_map((j,k))])
-                    # else:
-                    #     obca_sols[k][mode_map((j,k))] = sol.value(obca_lmbd[k][mode_map((j,k))])
-                
-           
-            # eps_o = sol.value(opt_epsilon_o)
+                    
             
             self.prev_states[agent_id] = next_states_pred
             self.prev_controls[agent_id] = {'control': u_res, 'rob_u' : rob_u_sol, 'bias': bias_sols}#, 'obca_lmbd':obca_sols}
@@ -636,7 +554,7 @@ class MM_MPC_TI(MPC_Base):
         except RuntimeError as e:
             print("Infeasible solve")
   
-        return u_res, next_states_pred
+        return u_res, next_states_pred, ev_glob_sol
     
     def simulate(self, Sim):
         # self.setup_visualization()
@@ -644,6 +562,7 @@ class MM_MPC_TI(MPC_Base):
         
         # parallelized implementation
         # while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
+        collision_probability_traj = []
         while Sim.t<self.total_sim_timestep and not Sim.done() and not Sim._check_collision():
             time_1 = time.time()
             print(self.num_timestep)
@@ -658,7 +577,8 @@ class MM_MPC_TI(MPC_Base):
                 
                 # u_ws = self.prev_controls[0,:]
                 u_ws = np.hstack([1*np.ones((self.N, 1)), np.zeros((self.N,1))])
-            results = [self.run_single_mpc(0, Sim.get_update_dict(u_ws.T))]
+            update_dict = Sim.get_update_dict(u_ws.T)
+            results = [self.run_single_mpc(0, update_dict)]
             
             # results = pool.starmap(self.run_single_mpc, [(agent_id, np.array(self.current_state[agent_id]), []) for agent_id in range(self.num_agent)])
     
@@ -675,7 +595,7 @@ class MM_MPC_TI(MPC_Base):
 
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
-                u, next_states_pred = result
+                u, next_states_pred, ev_global_trajectories = result
                 if u is None:
 
                     self.infeasible_count += 1
@@ -701,6 +621,11 @@ class MM_MPC_TI(MPC_Base):
                     self.control_cache[agent_id].append(u[0][0,:])
                     self.current_state[agent_id] = next_state
                     self.state_cache[agent_id].append(next_state)
+                    p_collision  = Sim.get_total_collision_probability(
+                        ev_global_trajectories,
+                        update_dict['o_glob'], update_dict['global_covs'], update_dict['Qs'], update_dict['mode_probabilities']
+                    )
+                    collision_probability_traj.append(p_collision)
                 
                 print("Agent state: ", Sim.ev.traj[:,Sim.t], " Agent control: ", u[0].T)
                 print("Agent pos: ", Sim.ev.traj_glob[:,Sim.t-1])

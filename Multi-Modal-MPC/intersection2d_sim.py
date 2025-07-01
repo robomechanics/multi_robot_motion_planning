@@ -92,6 +92,46 @@ class Prb_check_n_cluster:
                 collision_probability[tv_i][mode_j] = p_collision
 
         return risk_score, collision_probability
+
+    def get_total_collision_probability(self,
+                  ev_glob_sol,
+                  all_tv_means,
+                  all_tv_covs,
+                  all_tv_shapes,
+                  mm_prob,
+                  clusters
+                 ):
+        """
+        :returns: dict mappings (tv_idx,mode_idx) → risk_score
+                                                  → collision_probability
+        """
+        T = ev_glob_sol[0].shape[1]
+        collision_probability = 0
+        for cluster_id, cluster in enumerate(clusters):
+            ev_glob = ev_glob_sol[cluster_id] # Pick EV solution for this cluster's branc
+            tvs = list(all_tv_means.keys())
+            tv_modes = {tv_i:[scen[tv_i] for scen in cluster] for tv_i in tvs}
+            for tv_i in tvs:
+                for mode_j in tv_modes[tv_i]:
+                    mean_traj = all_tv_means[tv_i][mode_j]
+                    p_collision = 0
+                    for t in range(1,T):
+                        # print(f"Processing cluster {cluster_id}, scenario {scen}, TV {tv_i}, mode {mode_j}, time {t}")
+                        # print(f"EV position: {ev_glob[:, t]}, TV mean: {mean_traj[:, t]}, TV cov: {all_tv_covs[tv_i][mode_j][t]}, Agg shape: {all_tv_shapes[tv_i][mode_j][t-1]}")
+                        p_coll, score = self._mc_overlap_score(
+                                ev_pos   = ev_glob[:, t],
+                                tv_mean  = mean_traj[:, t],
+                                tv_cov   = all_tv_covs[tv_i][mode_j][t],
+                                agg_shape = all_tv_shapes[tv_i][mode_j][t-1],
+                                pred_prob=mm_prob[tv_i][mode_j]
+                            )
+                        p_collision = max(p_collision, p_coll)
+                    collision_probability+= p_collision
+        collision_probability /= max(1, len(clusters))
+
+        return collision_probability
+    
+
     
     def get_scenario_clusters(self, risk_score, prob_collision): 
         """
@@ -533,7 +573,7 @@ class Simulator():
                      'o0': [v.traj[:,v.t] for v in self.agents if v!=self.ev], 'o_glob': mm_o_glob, 
                      'routes': mm_routes, 'droutes': mm_droutes, 'Qs' : mm_Qs, 'noise_std' : [v.noise_std for v in self.agents if v!=self.ev],
                      'z_lin': z_lin, 'x_pos':x_pos,  'dpos': dpos, 'u_tvs': mm_u_tvs, 'route_fun': self.routes[self.ev.cl],
-                     'sizes':[v.veh_dims for v in self.agents if v!=self.ev], 'Revs': Revs,
+                     'sizes':[v.veh_dims for v in self.agents if v!=self.ev], 'Revs': Revs, 'global_covs': mm_glob_covs,
                      'clusters': scenario_clusters, 'mode_probabilities': self.mode_probabities}
         
         self.mm_preds.append(mm_o_glob)
@@ -547,6 +587,28 @@ class Simulator():
     def _check_out_inter(self,cl,s):
         return (self.sources[cl]=="E" and (s <= self.routes_pose[2][-1,-1]+0.5))\
                  or (self.sources[cl]=="W" and (s <= 51.+0.5))
+    
+    def _get_collision_probability(self, ev_glob_sol, all_tv_means, all_tv_covs, all_tv_shapes, mm_prob, clusters):
+        '''
+        Getting the total collision probability for the EV solution
+        '''
+        collision_probability = self.checker.get_total_collision_probability(
+            ev_glob_sol=ev_glob_sol,
+            all_tv_means=all_tv_means,
+            all_tv_covs=all_tv_covs,
+            all_tv_shapes=all_tv_shapes,
+            mm_prob=mm_prob,
+            clusters=clusters
+        )
+
+        return collision_probability
+       
+
+        
+        
+        
+            
+
         
     def _get_preds(self, u_opt):
         '''
@@ -557,6 +619,9 @@ class Simulator():
         
         x=self.ev.traj2d[:,self.ev.t].reshape((-1,1))+np.zeros((3,N+1))
         x_glob=self.ev.traj2d_glob[:2,self.ev.t].reshape((-1,1))+np.zeros((2, N+1))
+
+        x_sol = self.ev.traj2d[:,self.ev.t].reshape((-1,1))+np.zeros((3,N+1))
+        x_glob_sol = self.ev.traj2d_glob[:2,self.ev.t].reshape((-1,1))+np.zeros((2, N+1)) 
         
         dx_glob=[ca.DM(2,2) for _ in range(N)]
         o=[v.traj[:,v.t].reshape((-1,1))+np.zeros((2,self.N+1)) for v in self.agents if v!=self.ev]
@@ -573,6 +638,8 @@ class Simulator():
         
         tv_glob_cov = [[0*np.identity(2) for _ in range(N+1)] for v in self.agents if v!=self.ev]
         tv_cov = [[0*np.identity(2) for _ in range(N+1)] for v in self.agents if v!=self.ev]
+
+        
         
         for t in range(N):
             # if u_opt is None:
@@ -593,6 +660,11 @@ class Simulator():
            
             theta = 0
             control = np.array([float(a), theta])
+
+            if u_opt is None:
+                control_sol  = control
+            else:
+                control_sol = u_opt[:,t].squeeze()
             
            
             
@@ -600,6 +672,9 @@ class Simulator():
             x_dev, y_dev, psi_dev = self.get_deviation(x[0,t+1], x[-1,t+1], control[-1])
          
             x_glob[:,t+1:t+2]=self.routes[self.ev.cl](x[0,t+1]+.0)[:2]+ca.DM([x_dev, y_dev])
+
+            x_sol[:,t+1]=self.ev.get_next2d(x_sol[:,t], control_sol)
+            x_glob_sol[:,t+1:t+2]=self.routes[self.ev.cl](x_sol[0,t+1]+.0)[:2]+ca.DM([x_dev, y_dev])
             
             psi= self.routes[self.ev.cl](x[0,t+1])[2]
             dx_glob[t]=ca.horzcat(self.droutes[self.ev.cl](x[0,t+1]+.0)[:2], ca.DM([-np.sin(psi), np.cos(psi)]))
@@ -756,191 +831,7 @@ class Simulator():
 
         return x, x_glob, dx_glob, mm_o_glob, mm_u_tvs, mm_routes, mm_droutes, mm_Qs, Revs, mm_tv_cov, mm_tv_glob_cov
         
-    
-    # def _make_lanes(self):
-    #     #                         
-    #     # lane numbering:= 0:W->E, 1:E->W, 2:E->W (slow), (straights)
-    #     #                  3:W->N,                        (lefts)
-    #     #                  4:E->N                         (rights) 
-    #     self.modes   = {'E':[1,2,4,8, 9,10], 'W':[0,3,5,6,7]}
-    #     self.sources = {0:'W', 1:'E', 2: 'E', 3: 'W', 4:'E', 5:'W', 6:'W', 7:'W', 8:'E', 9:'E', 10:'E'}
-    #     self.sinks   = {0:'E', 1:'W', 2: 'W', 3:'N', 4:'N', 5:'E', 6:'E', 7:'E', 8:'W', 9:'W', 10:'W'}
 
-    #     #               TV  ped_W  ped_E     
-    #     self.n_modes  = [3,   3,    3 ]
-       
-        
-    #     def _make_ca_fun(s, x, y, psi, v):
-
-    #         x_ca= ca.interpolant("f2gx", "linear", [s], x)
-    #         y_ca= ca.interpolant("f2gy", "linear", [s], y)
-    #         psi_ca= ca.interpolant("f2gpsi", "linear", [s], psi)
-    #         v_ca= ca.interpolant("f2gv", "linear", [s], v)
-    #         s_sym=ca.MX.sym("s",1)
-
-    #         glob_fun=ca.Function("fx",[s_sym], [ca.vertcat(x_ca(s_sym), y_ca(s_sym), psi_ca(s_sym), v_ca(s_sym))])
-
-    #         return glob_fun
-        
-    #     def _make_jac_fun(pos_fun):
-    #         s_sym=ca.MX.sym("s",1)
-    #         pos_jac=ca.jacobian(pos_fun(s_sym), s_sym)
-    #         return ca.Function("pos_jac",[s_sym], [pos_jac])
-
-    #     self.routes_pose=[]
-    #     self.droutes=[]
-
-    #     straights_x=[]
-    #     # 0 : W->E
-    #     s=np.array([0,110])
-    #     xs=np.array((-50,60))
-    #     ys=np.array((0,0))
-    #     psis=np.array((np.pi, np.pi))
-    #     vs=np.array([8.5, 10.0])
-    #     r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
-    #     straights_x.append(r_fun)
-    #     self.droutes.append(_make_jac_fun(r_fun))
-    #     s_r=np.linspace(s[0], s[-1])
-   
-    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
-    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-
-    #     # 1 : E->W
-    #     r_fun=_make_ca_fun(s,xs[::-1],ys+15., psis, vs)
-    #     straights_x.append(r_fun)
-    #     self.droutes.append(_make_jac_fun(r_fun))
-    #     s_r=np.linspace(s[0], s[-1])
-    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
-    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-
-    #     # 2 : E->W
-    #     s=np.array([0,29])
-    #     xs=np.array((60,31))
-    #     ys=np.array((15,15))
-    #     vs=np.array([9.5,0.0])
-    #     r_fun=_make_ca_fun(s,xs,ys, -psis, vs)
-    #     straights_x.append(r_fun)
-    #     self.droutes.append(_make_jac_fun(r_fun))
-    #     s_r=np.linspace(s[0], s[-1])
-    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
-    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-        
-        
-    #     lefts_x=[]        
-    #     # 3 : W->N
-    #     thet=np.linspace(0,np.pi/2, 100)
-
-    #     x_f= lambda t :  8.5 + 15*np.sin(t)
-    #     y_f= lambda t :  15 - 15*np.cos(t)
-    #     s=np.hstack((np.array([0, 58.5]), 58.501 + 15.*thet, np.array([58.502+15.*np.pi/2, 58.5 + 15.*np.pi/2+25])))
-    #     vs=np.hstack((np.array([10., 7.]), 7. + 0.*thet, np.array([7., 8.])))
-    #     x_l=np.hstack((np.array([-50.,7.5]),x_f(thet), np.array([23.5, 23.5])))
-    #     y_l=np.hstack((np.array([0.,0.]), y_f(thet), np.array([15, 40.])))
-
-    #     psis=np.hstack((np.array([0.0, 0.]),  thet, 0.5*np.array([np.pi, np.pi])))
-    #     r_fun=_make_ca_fun(s, x_l, y_l, psis, vs)
-    #     lefts_x.append(r_fun)
-    #     self.droutes.append(_make_jac_fun(r_fun))
-    #     s_r=np.linspace(s[0], s[-1])
-    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
-    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-
-    #     lefts = lefts_x
-
-    #     rights=[] 
-
-    #     # 4 : E->N
-    #     x_f= lambda t :  31. - 7.5*np.sin(t)
-    #     y_f= lambda t :  22.5 - 7.5*np.cos(t)
-    #     s=np.hstack((np.array([0, 29.]), 29.001 + 7.5*thet, np.array([29.002+7.5*np.pi/2, 29.0 + 7.5*np.pi/2+17.5])))
-    #     x_l=np.hstack((np.array([60.,31.]), x_f(thet), np.array([23.5, 23.5])))
-    #     y_l=np.hstack((np.array([15.,15.]), y_f(thet), np.array([22.5, 40.])))
-    #     psis=np.hstack((np.array([np.pi, np.pi]), np.pi-thet, 0.5*np.array([np.pi, np.pi])))
-    #     vs=np.hstack((np.array([8, 5.5]), 5.5 + 0.*thet, np.array([5.5, 8])))
-    #     r_fun=_make_ca_fun(s, x_l, y_l, psis,vs)
-    #     rights.append(r_fun)
-    #     self.droutes.append(_make_jac_fun(r_fun))
-    #     s_r=np.linspace(s[0], s[-1])
-    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
-    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-        
-    #     ped_cross =[]
-    #     # 5 : W->E (run)
-    #     s=np.array([0,31])
-    #     xs=np.array((1,32))
-    #     ys=np.array((26,26))
-    #     psis=np.array((np.pi, np.pi))
-    #     vs=np.array([4, .0])
-    #     r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
-    #     ped_cross.append(r_fun)
-    #     self.droutes.append(_make_jac_fun(r_fun))
-    #     s_r=np.linspace(s[0], s[-1])
-    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
-    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-        
-    #     # 6 : W->E (walk)
-    #     s=np.array([0,31])
-    #     xs=np.array((1,32))
-    #     ys=np.array((26,26))
-    #     psis=np.array((np.pi, np.pi))
-    #     vs=np.array([2, 0.])
-    #     r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
-    #     ped_cross.append(r_fun)
-    #     self.droutes.append(_make_jac_fun(r_fun))
-    #     s_r=np.linspace(s[0], s[-1])
-    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
-    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-        
-    #     # 7 : W->E (yield)
-    #     s=np.array([0,1])
-    #     xs=np.array((1,2))
-    #     ys=np.array((26,26))
-    #     psis=np.array((np.pi, np.pi))
-    #     vs=np.array([0.2, 0])
-    #     r_fun=_make_ca_fun(s,xs,ys, 0.*psis, vs)
-    #     ped_cross.append(r_fun)
-    #     self.droutes.append(_make_jac_fun(r_fun))
-    #     s_r=np.linspace(s[0], s[-1])
-    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
-    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-        
-
-    #     # 8 : E->W (run)
-    #     s=np.array([0,31])
-    #     xs=np.array((1,32))
-    #     ys=np.array((26,26))
-    #     psis=np.array((np.pi, np.pi))
-    #     vs=np.array([4, .0])
-    #     r_fun=_make_ca_fun(s,xs[::-1],ys-1.0, psis, vs)
-    #     ped_cross.append(r_fun)
-    #     self.droutes.append(_make_jac_fun(r_fun))
-    #     s_r=np.linspace(s[0], s[-1])
-    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
-    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-        
-    #     # 9 : E->W (walk)
-    #     vs=np.array([2, 0.])
-    #     r_fun=_make_ca_fun(s,xs[::-1],ys-1., psis, vs)
-    #     ped_cross.append(r_fun)
-    #     self.droutes.append(_make_jac_fun(r_fun))
-    #     s_r=np.linspace(s[0], s[-1])
-    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
-    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-        
-    #     # 10 : E->W (yield)
-    #     s=np.array([0,1])
-    #     xs=np.array((31,32))
-    #     vs=np.array([0.2, 0])
-    #     r_fun=_make_ca_fun(s,xs[::-1],ys-1., psis, vs)
-    #     ped_cross.append(r_fun)
-    #     self.droutes.append(_make_jac_fun(r_fun))
-    #     s_r=np.linspace(s[0], s[-1])
-    #     r_p=ca.horzcat(*[r_fun(s_r[i])[:3] for i in range(s_r.shape[0])])
-    #     self.routes_pose.append(ca.vertcat(r_p,s_r.reshape((1,-1))))
-
-    #     straights = straights_x
-        
-    #     self.routes=straights+lefts+rights+ped_cross
     
     def _make_lanes(self):
         #                         
