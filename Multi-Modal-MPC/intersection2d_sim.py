@@ -229,6 +229,8 @@ class Simulator():
         # Added incrementally
         self.N_modes=[]
         self.mode_probabities = []
+
+        self.collision_avoidance_hyperplanes = []
         
         for i,v in enumerate(self.agents):
             if v.role=="TV":
@@ -1100,15 +1102,25 @@ class Simulator():
 
         for k, v in enumerate(self.agents):
             if v.role not in ["dummy", "ev"]:
-                if self.viz_preds and k in self.tv_idxs:
+                if self.viz_preds:
                     tv_mm_preds=self.mm_preds[i][k]
                     colors = ['orange', 'red', 'yellow']
                     for m, pred in enumerate(tv_mm_preds):
-                        #TV predictions 
+                        #agent predictions 
                        
                         ax.scatter(np.array(pred[0,:]).squeeze(), np.clip(np.array(pred[1,:]).squeeze(),-8,52), color=colors[m], alpha=0.7,edgecolors='k',linewidths=1.5)
 
-                
+                        for t in range(pred.shape[1]-1):
+                            coeff_y, m, c = self.collision_avoidance_hyperplanes[k][m][t+1]
+
+                            if coeff_y!=0:
+                                x_vals = np.linspace(-20, 20, 25)
+                                y_vals = m*x_vals + c
+                                ax.plot(x_vals, y_vals, color=colors[m], linestyle='--', linewidth=1.5, alpha=0.7)
+                            else:
+                                y_vals = np.linspace(-20, 20, 25)
+                                x_vals = np.full_like(y_vals, c)
+                                ax.plot(x_vals, y_vals, color=colors[m], linestyle='--', linewidth=1.5, alpha=0.7)
 
         #Print EV States
         # ev_legend = Rectangle((-48,-15),6.,3.6,linewidth=1., ec='green', fc='green')

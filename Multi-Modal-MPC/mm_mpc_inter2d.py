@@ -379,6 +379,7 @@ class MM_MPC_TI(MPC_Base):
         # print("EV PRED: ", ev_global_pos)
         # print("TV PRED: ", gmm_predictions_vector[0][0])
         # print("Dist :", np.linalg.norm(ev_global_pos[:,1:]-gmm_predictions_vector[0][0][:,1:], axis = 0))
+        collision_avoidance_halfspaces = {k: {j: {t: None for t in range(1, self.N)} for j in range(self.num_modes)} for k in range(n_obs)}
         print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
         if clusters is None or 'SM-MPC' not in self.scenario:
             for k, agent_prediction in enumerate(gmm_predictions_vector):
@@ -416,6 +417,23 @@ class MM_MPC_TI(MPC_Base):
                                 ds = A[3*t:3*(t+1):2,:]@ca.DM(current_state)+B[3*t:3*(t+1):2,:]@ca.vec(opt_controls[m].T)
                                 dx = jac_ev_pos[t-1]@(ds-x_lin[0:3:2,t].T)
                                 nom_dist=lin_dist@agg_Q[k][j][t-1]@(ev_global_pos[:,t].T+dx-obs_avoid_lin_ref)
+
+                                # half-space for collsion avoidance, y=mx+c
+                                coeff_y, coeff_x = lin_dist@agg_Q[k][j][t-1][1], lin_dist@agg_Q[k][j][t-1][0]
+                                coeff_c = lin_dist@agg_Q[k][j][t-1]@(ev_global_pos[:,t].T-jac_ev_pos[t-1]@x_lin[0:3:2,t].T-obs_avoid_lin_ref)
+
+                                if abs(coeff_y) <= 1e-6:
+                                    coeff_y = 0
+                                    coeff_c/=coeff_x
+                                    coeff_x = 1
+                                else:
+                                    coeff_x = coeff_x / coeff_y
+                                    coeff_c = coeff_c / coeff_y
+                                    coeff_y = 1
+                                
+                                collision_avoidance_halfspaces[k][j][t] = (coeff_x, coeff_y, coeff_c)
+
+
                                 # print(f"nominal distance delta:  {lin_dist@agg_Q[k][j][t-1]@(ev_global_pos[:,t]-obs_avoid_lin_ref + jac_ev_pos[t-1]*(A[2*t,:]@ca.DM(current_state)-z_lin[0,t]))}" )
                             except:
                                 import pdb; pdb.set_trace()
@@ -461,6 +479,21 @@ class MM_MPC_TI(MPC_Base):
                             nom_dist=lin_dist@agg_Q[k][scen[k]][t-1]@(ev_global_pos[:,t].T+dx-obs_avoid_lin_ref)
                             opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
                             opti.subject_to(nom_dist>=0)
+
+                            # half-space for collsion avoidance, y=mx+c
+                            coeff_y, coeff_x = lin_dist@agg_Q[k][scen[k]][t-1][1], lin_dist@agg_Q[k][scen[k]][t-1][0]
+                            coeff_c = lin_dist@agg_Q[k][scen[k]][t-1]@(ev_global_pos[:,t].T-jac_ev_pos[t-1]@x_lin[0:3:2,t].T-obs_avoid_lin_ref)
+
+                            if abs(coeff_y) <= 1e-6:
+                                coeff_y = 0
+                                coeff_c/=coeff_x
+                                coeff_x = 1
+                            else:
+                                coeff_x = coeff_x / coeff_y
+                                coeff_c = coeff_c / coeff_y
+                                coeff_y = 1
+                            
+                            collision_avoidance_halfspaces[k][scen[k]][t] = (coeff_x, coeff_y, coeff_c)
                             # soc = ca.soc(rv_dist, nom_dist)
                             # opti.subject_to(soc>0)
                             num_constr+=2
@@ -555,7 +588,7 @@ class MM_MPC_TI(MPC_Base):
         except RuntimeError as e:
             print("Infeasible solve")
   
-        return u_res, next_states_pred, ev_glob_sol
+        return u_res, next_states_pred, ev_glob_sol, collision_avoidance_halfspaces
     
     def simulate(self, Sim):
         # self.setup_visualization()
@@ -596,7 +629,7 @@ class MM_MPC_TI(MPC_Base):
 
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
-                u, next_states_pred, ev_global_trajectories = result
+                u, next_states_pred, ev_global_trajectories, ca_hyperplanes = result
                 if u is None:
 
                     self.infeasible_count += 1
@@ -627,7 +660,7 @@ class MM_MPC_TI(MPC_Base):
                         update_dict['o_glob'], update_dict['global_covs'], update_dict['Qs'], update_dict['mode_probabilities'], update_dict['clusters']
                     )
                     collision_probability_traj.append(p_collision)
-                
+                Sim.collsion_avoidance_halfspaces.append(ca_hyperplanes)
                 print("Agent state: ", Sim.ev.traj[:,Sim.t], " Agent control: ", u[0].T)
                 print("Agent pos: ", Sim.ev.traj_glob[:,Sim.t-1])
                 # print("TV pos: ", Sim.tvs[0].traj_glob[:, Sim.t-1])
