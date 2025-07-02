@@ -329,7 +329,7 @@ class Simulator():
                             print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Branch #3: Keep Going. Vehicle ahead')
                             
                         
-                        if (vh[1]<YIELD_VEL_THRESH and np.abs(np.sin(2*psi))>1e-3): #if vh is hestitating, just go
+                        if np.linalg.norm(vh_pos-v_pos)<10 or (vh[1]<YIELD_VEL_THRESH and np.abs(np.sin(2*psi))>1e-3): #if vh is hestitating, just go
                             ds = KEEP_GOING_REL_DIST
                             dv = KEEP_GOING_REL_VEL
                 # agents are close and interacting outside the intersection
@@ -367,7 +367,7 @@ class Simulator():
                         elif vh_s-v[0]<BUMPER_2_BUMPER_DIST and vh_s-v[0]>=INTERACTION_REGION_MIN and np.linalg.norm(p2p1)<=INTERACTION_REGION_MAX and not self._check_out_inter(clh,vh[0]):
                             ds=max(vh_s-v[0]-BUMPER_2_BUMPER_DIST,YIELD_REL_DIST)
                             dv=v[1]-vh[1]*np.cos(psi-vh_psi)
-                            dv+=5*STRAIGHT_SPEED_ADJUSTMENT if np.abs(np.sin(float(psi)))<=1e-3 else -.TURN_SPEED_ADJUSTMENT
+                            dv+=5*STRAIGHT_SPEED_ADJUSTMENT if np.abs(np.sin(float(psi)))<=1e-3 else -.5*TURN_SPEED_ADJUSTMENT
                             if verbose:
                                     print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Branch #7: Keep Going. Vehicle ahead ')
 
@@ -530,6 +530,7 @@ class Simulator():
                     idx_=set(self.tv_idxs)-set([ind])
                     v_ =[self.agents[k].traj[:,v.t] for k in idx_] + [self.ev.traj[:,v.t]]
                     cl_=[self.agents[k].cl for k in idx_] + [self.ev.cl]
+                    print(f"TV centerline: {v.cl}" )
                     v_des, dv, ds= self._get_idm_params(v.traj[:,v.t], v.cl, v_, cl_, verbose = True)
                     a = v.clip_vel_acc(v.traj[:,v.t],v.idm(v_des, dv, ds)) 
                     v.step(a)
