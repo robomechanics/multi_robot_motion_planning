@@ -52,7 +52,7 @@ obs = {"static": static_obs, "dynamic": obs_traj}
 
 num_trials = 1
 # algs = ["SM-MPC"]#, "MM-MPC", "Branch-MPC", "Robust-MPC"]
-algs = ["MM-MPC", 'SM-MPC', 'Branch-MPC', 'Robust-MPC']
+algs = ["MM-MPC", 'SM-MPC', 'Branch-MPC', 'Robust-MPC'][::-1]
 # algs = ["SM-MPC"]
 # algs = ["Robust-MPC"]
 # algs = ["Branch-MPC"]

@@ -420,15 +420,15 @@ class MM_MPC_TI(MPC_Base):
 
                                 # half-space for collsion avoidance, y=mx+c
                                 coeff_y, coeff_x = lin_dist@agg_Q[k][j][t-1][1], lin_dist@agg_Q[k][j][t-1][0]
-                                coeff_c = lin_dist@agg_Q[k][j][t-1]@(ev_global_pos[:,t].T-jac_ev_pos[t-1]@x_lin[0:3:2,t].T-obs_avoid_lin_ref)
+                                coeff_c = lin_dist@agg_Q[k][j][t-1]@(-obs_avoid_lin_ref)
 
                                 if abs(coeff_y) <= 1e-6:
                                     coeff_y = 0
-                                    coeff_c/=coeff_x
+                                    coeff_c/=(-coeff_x)
                                     coeff_x = 1
                                 else:
-                                    coeff_x = coeff_x / coeff_y
-                                    coeff_c = coeff_c / coeff_y
+                                    coeff_x = -coeff_x / coeff_y
+                                    coeff_c = -coeff_c / coeff_y
                                     coeff_y = 1
                                 
                                 collision_avoidance_halfspaces[k][j][t] = (coeff_x, coeff_y, coeff_c)
@@ -438,10 +438,10 @@ class MM_MPC_TI(MPC_Base):
                             except:
                                 import pdb; pdb.set_trace()
                         
-                            # opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
-                            # opti.subject_to(nom_dist>=0)
-                            soc = ca.soc(rv_dist, nom_dist)
-                            opti.subject_to(soc>0)
+                            opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
+                            opti.subject_to(nom_dist>=0)
+                            # soc = ca.soc(rv_dist, nom_dist)
+                            # opti.subject_to(soc>0)
 
                             num_constr+= 2
         else:
@@ -482,15 +482,15 @@ class MM_MPC_TI(MPC_Base):
 
                             # half-space for collsion avoidance, y=mx+c
                             coeff_y, coeff_x = lin_dist@agg_Q[k][scen[k]][t-1][1], lin_dist@agg_Q[k][scen[k]][t-1][0]
-                            coeff_c = lin_dist@agg_Q[k][scen[k]][t-1]@(ev_global_pos[:,t].T-jac_ev_pos[t-1]@x_lin[0:3:2,t].T-obs_avoid_lin_ref)
+                            coeff_c = lin_dist@agg_Q[k][scen[k]][t-1]@(-obs_avoid_lin_ref)
 
                             if abs(coeff_y) <= 1e-6:
                                 coeff_y = 0
-                                coeff_c/=coeff_x
+                                coeff_c/=(-coeff_x)
                                 coeff_x = 1
                             else:
-                                coeff_x = coeff_x / coeff_y
-                                coeff_c = coeff_c / coeff_y
+                                coeff_x = -coeff_x / coeff_y
+                                coeff_c = -coeff_c / coeff_y
                                 coeff_y = 1
                             
                             collision_avoidance_halfspaces[k][scen[k]][t] = (coeff_x, coeff_y, coeff_c)
@@ -660,7 +660,7 @@ class MM_MPC_TI(MPC_Base):
                         update_dict['o_glob'], update_dict['global_covs'], update_dict['Qs'], update_dict['mode_probabilities'], update_dict['clusters']
                     )
                     collision_probability_traj.append(p_collision)
-                Sim.collsion_avoidance_halfspaces.append(ca_hyperplanes)
+                Sim.collision_avoidance_hyperplanes.append(ca_hyperplanes)
                 print("Agent state: ", Sim.ev.traj[:,Sim.t], " Agent control: ", u[0].T)
                 print("Agent pos: ", Sim.ev.traj_glob[:,Sim.t-1])
                 # print("TV pos: ", Sim.tvs[0].traj_glob[:, Sim.t-1])

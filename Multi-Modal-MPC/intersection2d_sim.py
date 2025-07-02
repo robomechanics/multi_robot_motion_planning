@@ -258,28 +258,50 @@ class Simulator():
         Our IDM-based Interaction Engine
         '''
         v_des=self.routes[cl](v[0]+.5)[-1]
+        DEFAULT_DRIVE_REL_DIST = 0.0
+        DEFAULT_DRIVE_REL_VEL = 1e5
 
-        dv   =0.0 
-        ds   =1e5
+        HEADING_DIFF_THRESH = 0.3
+
+        YIELD_REL_DIST_THRESH = 5.0
+        YIELD_VEL_THRESH = 1.0
+        YIELD_REL_DIST = .01
+        YIELD_REL_VEL = 8.0
+
+        STRAIGHT_SPEED_ADJUSTMENT = 1.0
+        TURN_SPEED_ADJUSTMENT = -5.0
+        KEEP_GOING_REL_DIST = 1e5
+        KEEP_GOING_REL_VEL = 0
+  
+
+        BUMPER_2_BUMPER_DIST = 6.0
+        BUMPER_2_BUMPER_VEL = 8.0
+
+        INTERACTION_REGION_MAX = 5.0
+        INTERACTION_REGION_MIN = 1.0
+
+
+        dv = DEFAULT_DRIVE_REL_VEL
+        ds = DEFAULT_DRIVE_REL_DIST
 
         psi=self.routes[cl](v[0])[2]
             
         for i, (vh, clh) in enumerate(zip(v_,cl_)):
-
-            if clh in self.modes[self.sources[cl]]:
+            #if the other agent originates from the same source as the current agent
+            if clh in self.modes[self.sources[cl]]: 
 
                 
                 vh_s=vh[0]
                 vh_psi=self.routes[clh](vh[0])[2]
-
-                if vh_s-v[0]>=0. and np.abs(np.cos(psi-vh_psi))>=0.3:
-                    ds=max(vh_s-v[0]-6.0,0.01)
+                #if the other agent is ahead of the current agent and the angle between them is not too large
+                if vh_s-v[0]>=0. and np.abs(np.cos(psi-vh_psi))>=HEADING_DIFF_THRESH: 
+                    ds=max(vh_s-v[0]-BUMPER_2_BUMPER_DIST,0.01)
                     vh_psi=self.routes[clh](vh[0])[2]
-                    dv=v[1]-vh[1]*np.cos(psi-vh_psi)+6.
+                    dv=v[1]-vh[1]*np.cos(psi-vh_psi)+BUMPER_2_BUMPER_VEL
                     if verbose:
                         print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Branch #1: Keep going')
                     break
-            
+            # if the other agent terminates into the same sink as the current agent
             if self.sinks[cl]==self.sinks[clh]:
                 
                 vh_pos=self.routes[clh](vh[0]-.0)[:2].reshape((-1,1))
@@ -291,29 +313,30 @@ class Simulator():
                 # if vh[0]>=55.0:
                 #     verbose = True
                 # Number 10 here is the interaction region, the higher the more conservative the policy
-                if np.abs(np.sin(float(2*psi)))<=1e-3 and vh_s-v[0]>=1. and vh_s-v[0]<=5. and self._check_out_inter(cl,v[0]) :
-                    if (vh[1]>=1 and vh_s-v[0]<=10) and (1<=(v_s_on_vh - vh[0]) <= 10) and np.linalg.norm(vh_pos-v_pos)<5:
-                        ds=0.01
-                        dv=8
+                # if thecurrent agent is at the entrance of the intersection and the other agent is ahead of it, yield
+                if np.abs(np.sin(float(2*psi)))<=1e-3 and vh_s-v[0]>=INTERACTION_REGION_MIN and vh_s-v[0]<=INTERACTION_REGION_MAX and self._check_out_inter(cl,v[0]) :
+                    if (vh[1]>=YIELD_VEL_THRESH and vh_s-v[0]<=YIELD_REL_DIST_THRESH) and (INTERACTION_REGION_MIN<=(v_s_on_vh - vh[0]) <= YIELD_REL_DIST_THRESH) and np.linalg.norm(vh_pos-v_pos)<YIELD_REL_DIST_THRESH:
+                        ds=YIELD_REL_DIST
+                        dv=YIELD_REL_VEL
                         if verbose:
                             print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Branch #2: Yield')
                     else:
-                        ds=max(vh_s-v[0]-6.,0.01) 
+                        ds=max(vh_s-v[0]-BUMPER_2_BUMPER_DIST,YIELD_REL_DIST) 
                         dv=v[1]-vh[1]*np.cos(psi-vh_psi)
-                        dv+= 1. if 2*float(psi)%np.pi==0 else -5.
+                        dv+= STRAIGHT_SPEED_ADJUSTMENT if 2*float(psi)%np.pi==0 else TURN_SPEED_ADJUSTMENT # relative speed adjustement when taking turns
 
                         if verbose:
                             print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Branch #3: Keep Going. Vehicle ahead')
                             
                         
-                        if np.linalg.norm(vh_pos-v_pos)<10 or (vh[1]<0 and np.abs(np.sin(2*psi))>=0.001): #if vh is hestitating, just go
-                            ds = 1e5
-                            dv = 0.0
-
-                elif vh_s-v[0]-5.0 < 0. and vh_s - v[0]>=1.0 and np.abs(np.cos(psi-vh_psi))>=0.3:
-                    ds=max(vh_s-v[0]-6.,0.01) 
+                        if (vh[1]<YIELD_VEL_THRESH and np.abs(np.sin(2*psi))>1e-3): #if vh is hestitating, just go
+                            ds = KEEP_GOING_REL_DIST
+                            dv = KEEP_GOING_REL_VEL
+                # agents are close and interacting outside the intersection
+                elif vh_s-v[0]< INTERACTION_REGION_MAX/2 and vh_s - v[0]>=INTERACTION_REGION_MIN and np.abs(np.cos(psi-vh_psi))>=HEADING_DIFF_THRESH: #if the other agent is ahead of the current agent and the angle between them is not too large   
+                    ds=max(vh_s-v[0]-BUMPER_2_BUMPER_DIST,YIELD_REL_DIST) 
                     dv=v[1]-vh[1]*np.cos(psi-vh_psi)
-                    dv+= 5. if 2*float(psi)%np.pi==0 else -5.
+                    dv+= 5*STRAIGHT_SPEED_ADJUSTMENT if 2*float(psi)%np.pi==0 else TURN_SPEED_ADJUSTMENT
 
                     if verbose:
                         print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Branch #4: Keep Going. Vehicle ahead')
@@ -321,36 +344,36 @@ class Simulator():
                     if verbose:
                         print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Keep Going')
             else:
-
+                # Cross-path interaction
                 vh_pos=self.routes[clh](vh[0]-.0)[:2].reshape((-1,1))
                 vh_s=self._g2f(vh_pos,cl)
                 vh_psi=self.routes[clh](vh[0]+0.)[2]
 
                 p2p1=-self.routes[cl](v[0]+0.)[:2].reshape((-1,1))+vh_pos
-                d1 = self.droutes[cl](v[0]+0.)[:2].reshape((-1,1))*10.      #30 m lookahead
-                d2 = self.droutes[clh](vh[0]-.0)[:2].reshape((-1,1))*10.
+                d1 = self.droutes[cl](v[0]+0.)[:2].reshape((-1,1))*INTERACTION_REGION_MAX      #10 m lookahead
+                d2 = self.droutes[clh](vh[0]-.0)[:2].reshape((-1,1))*INTERACTION_REGION_MAX
                 d1cd2, pcd2, pcd1  =ca.det(ca.horzcat(d1,d2)), ca.det(ca.horzcat(p2p1, d2)), ca.det(ca.horzcat(p2p1, d1))
 
-                if int(d1cd2 > 0 or d1cd2 < 0)==1:
+                if int(d1cd2 > 0 or d1cd2 < 0)==1: # LOOK-AHEADS LINE-OF-SIGHT INTERSECT!
                     t, u = pcd2/d1cd2, pcd1/d1cd2
-                    if bool(0.<=t<=1.) and bool(0.<=u<=1.):
-                        if np.abs(np.sin(float(psi)))<=1e-3 and vh_s-v[0]>=0.5 and np.linalg.norm(p2p1)<=10. and self._check_out_inter(cl,v[0]):
+                    if bool(0.<=t<=1.) and bool(0.<=u<=1.): # INTERSECTION HAPPENS INSIDE THE INTERACTION REGION
+                        if np.abs(np.sin(float(psi)))<=1e-3 and vh_s-v[0]>=INTERACTION_REGION_MIN and np.linalg.norm(p2p1)<=INTERACTION_REGION_MAX and self._check_out_inter(cl,v[0]):
                             # if vh[1]>=2.:
-                            ds=0.01
-                            dv=8.
+                            ds=YIELD_REL_DIST
+                            dv=YIELD_REL_VEL
                             if verbose:
                                 print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Branch #5: Yield')
-                            
-                        elif vh_s-v[0]-6.0<0. and vh_s-v[0]>=0.5 and np.linalg.norm(p2p1)<=10. and not self._check_out_inter(clh,vh[0]):
-                            ds=max(vh_s-v[0]-6.0,0.01)
+                        # INTERACTION HAPPENS OUTSIDE THE INTERACTION REGION   
+                        elif vh_s-v[0]<BUMPER_2_BUMPER_DIST and vh_s-v[0]>=INTERACTION_REGION_MIN and np.linalg.norm(p2p1)<=INTERACTION_REGION_MAX and not self._check_out_inter(clh,vh[0]):
+                            ds=max(vh_s-v[0]-BUMPER_2_BUMPER_DIST,YIELD_REL_DIST)
                             dv=v[1]-vh[1]*np.cos(psi-vh_psi)
-                            dv+=6. if np.abs(np.sin(float(psi)))<=1e-3 else 2.
+                            dv+=5*STRAIGHT_SPEED_ADJUSTMENT if np.abs(np.sin(float(psi)))<=1e-3 else -.TURN_SPEED_ADJUSTMENT
                             if verbose:
                                     print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Branch #7: Keep Going. Vehicle ahead ')
 
-                            if vh[1]<0 and np.abs(np.sin(psi))>=0.001: #if vh is hestitating, just go
-                                ds = 1e5
-                                dv = 0.0
+                            if vh[1]<YIELD_VEL_THRESH and np.abs(np.sin(psi))>=1e-3: #if vh is hestitating, just go
+                                ds = KEEP_GOING_REL_DIST
+                                dv = KEEP_GOING_REL_VEL
                         else:
                             if verbose:
                                 print(f'Vehicle #{i} (EV: {i==len(cl_)-1}):=   Branch #8: Keep Going')       
@@ -1101,26 +1124,30 @@ class Simulator():
             ax.plot(np.array(self.ev_sols[i][0,1:]).squeeze(), np.clip(np.array(self.ev_sols[i][1,1:]).squeeze(),-8,52), color="g", lw = 2, alpha=0.8 )
 
         for k, v in enumerate(self.agents):
-            if v.role not in ["dummy", "ev"]:
+            if v.role not in ["dummy", "EV"]:
                 if self.viz_preds:
+                    
                     tv_mm_preds=self.mm_preds[i][k]
+                    
                     colors = ['orange', 'red', 'yellow']
                     for m, pred in enumerate(tv_mm_preds):
                         #agent predictions 
                        
                         ax.scatter(np.array(pred[0,:]).squeeze(), np.clip(np.array(pred[1,:]).squeeze(),-8,52), color=colors[m], alpha=0.7,edgecolors='k',linewidths=1.5)
 
-                        for t in range(pred.shape[1]-1):
-                            coeff_y, m, c = self.collision_avoidance_hyperplanes[k][m][t+1]
-
+                        for t in range(pred.shape[1]-2):
+                            if self.collision_avoidance_hyperplanes[i][k][m][t+1] is None:
+                                continue
+                            coeff_x, coeff_y, c = self.collision_avoidance_hyperplanes[i][k][m][t+1]
+                            
                             if coeff_y!=0:
-                                x_vals = np.linspace(-20, 20, 25)
-                                y_vals = m*x_vals + c
-                                ax.plot(x_vals, y_vals, color=colors[m], linestyle='--', linewidth=1.5, alpha=0.7)
+                                x_vals = np.linspace(-5+np.array(pred[0,t]).squeeze(), 5+np.array(pred[0,t]).squeeze(), 10)
+                                y_vals = coeff_x*x_vals + c
+                                ax.plot(x_vals, y_vals, color='red' if k in self.tv_idxs else 'blue', linestyle='--', linewidth=1.5, alpha=0.7)
                             else:
-                                y_vals = np.linspace(-20, 20, 25)
+                                y_vals = np.linspace(-5+np.array(pred[1,t]).squeeze(), 5+np.array(pred[1,t]).squeeze(), 10)
                                 x_vals = np.full_like(y_vals, c)
-                                ax.plot(x_vals, y_vals, color=colors[m], linestyle='--', linewidth=1.5, alpha=0.7)
+                                ax.plot(x_vals, y_vals, color='red' if k in self.tv_idxs else 'blue', linestyle='--', linewidth=1.5, alpha=0.7)
 
         #Print EV States
         # ev_legend = Rectangle((-48,-15),6.,3.6,linewidth=1., ec='green', fc='green')
@@ -1133,7 +1160,7 @@ class Simulator():
 
         ax.set_xlim(-50,60)
         ax.set_ylim(-8,50)
-        ax.axis('equal')
+        # ax.axis('equal')
         
 if __name__=="__main__":
     
