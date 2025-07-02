@@ -109,7 +109,7 @@ class Prb_check_n_cluster:
         collision_probability = 0
         for cluster_id, cluster in enumerate(clusters):
             ev_glob = ev_glob_sol[cluster_id] # Pick EV solution for this cluster's branc
-            tvs = list(all_tv_means.keys())
+            tvs = list(range(len(all_tv_means)))
             tv_modes = {tv_i:[scen[tv_i] for scen in cluster] for tv_i in tvs}
             for tv_i in tvs:
                 for mode_j in tv_modes[tv_i]:

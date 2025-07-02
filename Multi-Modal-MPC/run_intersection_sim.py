@@ -53,12 +53,13 @@ obs = {"static": static_obs, "dynamic": obs_traj}
 num_trials = 1
 # algs = ["SM-MPC"]#, "MM-MPC", "Branch-MPC", "Robust-MPC"]
 algs = ["MM-MPC", 'SM-MPC', 'Branch-MPC', 'Robust-MPC']
-# algs = ["MM-MPC"]
+# algs = ["SM-MPC"]
+# algs = ["Robust-MPC"]
 # algs = ["Branch-MPC"]
 branch_times = [2]
 clusters     = [2]
-noise_levels = [0.1]
-make_plots = True
+noise_levels = [0.01]
+make_plots =False
 if make_plots:
     results = summarize_algorithm_comparison_results("mm_results")
     # import pdb; pdb.set_trace()
@@ -71,16 +72,22 @@ else:
         uncontrolled_fleet = UncontrolledAgent(init_state=[(0, 0, -np.pi/2)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=0.2)
         uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
         for cl in clusters:
-            for alg in algs:
-                if cl > clusters[0] and alg!="SM-MPC":
-                    continue
-                for trial in range(num_trials):
+            for trial in range(num_trials):
+                ev_start_state = np.array([45, 5.7 + random.uniform(-0.2,0.2), 0])
+                tv_scenario = random.choice([1,4])
+                tv_start_state = random.choice([[0, 2+ random.uniform(-0.5,0.5)], [6, 0.1]])
+                ped_start_state = random.choice([[0, 2+ random.uniform(-0.5,0.5)], [6, 0.1]])
+                ped_decision_point = 8.+random.uniform(-0.5,0.5)
+                for alg in algs:
+
+                    if cl > clusters[0] and alg!="SM-MPC":
+                        continue
+                
                     ev_noise_std=[0.00001,0.00001]
-                    ev=Agent2D(role='EV', cl=3, state=np.array([45, 5.7 + random.uniform(-0.2,0.2), 0.
-                                                                ]), dt = mpc_params['dt'], noise_std=ev_noise_std)
+                    ev=Agent2D(role='EV', cl=3, state=ev_start_state, dt = mpc_params['dt'], noise_std=ev_noise_std)
                     tv_noise_std=[noise_level]*2
-                    agents=[Agent(role='TV', cl=random.choice([1,4]), dt = mpc_params['dt'], state=np.array([0, 2+ random.uniform(-0.5,0.5)]), noise_std=tv_noise_std) for i in range(1)]
-                    agents.append(Agent(role='ped', cl=6, dt = mpc_params['dt'], state=np.array([.0+random.uniform(-0.05,0.1), 2.5+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 8+random.uniform(-0.5,0.5)))
+                    agents=[Agent(role='TV', cl=tv_scenario, dt = mpc_params['dt'], state=np.array(tv_start_state), noise_std=tv_noise_std) for i in range(1)]
+                    agents.append(Agent(role='ped', cl=6, dt = mpc_params['dt'], state=np.array(ped_start_state), noise_std=tv_noise_std, s_dec = ped_decision_point))
                     # # agents.append(Agent(role='ped', cl=9, state=np.array([0., 2.+ random.uniform(-0.1,0.1)]), noise_std=tv_noise_std, s_dec = 12+random.uniform(-0.5,0.5)))
                     # agents=[Agent(role='TV', cl=4, dt = mpc_params['dt'], state=np.array([6, 0.1]), noise_std=tv_noise_std) for i in range(1)]
                     # agents= []

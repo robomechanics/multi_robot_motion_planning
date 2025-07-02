@@ -118,7 +118,7 @@ class MM_MPC_TI(MPC_Base):
             # "gurobi.NumericFocus": 1,
             # "gurobi.Method": -1,
             # "gurobi.Threads": 8,
-            "BarConvTol": 1e-6,
+            "BarConvTol": 1e-3,
             "verbose": True,  # Optional: print solver output
         }
         opti.solver('gurobi', {}, {})
@@ -244,7 +244,7 @@ class MM_MPC_TI(MPC_Base):
                 # robot_cost = robot_cost + mode_weight*(ca.mtimes([(opt_states[j][k, :]-opt_xs.T), Q, (opt_states[j][k, :]-opt_xs.T).T] 
                 #             )+ ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) + 100000 * opt_epsilon_r[j][k]) #+ 100000 * opt_epsilon_o[k]
                 robot_cost = robot_cost + mode_weight*(-2*opt_states[j][k,0]
-                    + 100*ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) ) #+ 100000 * opt_epsilon_r[j][k]) 
+                    + 10*ca.mtimes([opt_controls[j][k, :], R, opt_controls[j][k, :].T]) ) #+ 100000 * opt_epsilon_r[j][k]) 
                 if k>0:
                     robot_cost+= 10000*mode_weight*(opt_controls[j][k-1,:]-opt_controls[j][k,:])@(opt_controls[j][k-1,:]-opt_controls[j][k,:]).T
                     robot_cost+= 1000*mode_weight*(opt_states[j][k-1,2] - opt_states[j][k,2])**2
@@ -253,9 +253,9 @@ class MM_MPC_TI(MPC_Base):
                     robot_cost+= 1000*mode_weight*( current_state[2]- opt_states[j][k,2])**2
                     
                 opti.subject_to(opti.bounded(-1, v[j], 6))#self.v_lim))
-            opti.subject_to(opti.bounded(-10, a[j], 3))
+            opti.subject_to(opti.bounded(-100, a[j], 3))
             opti.subject_to(opti.bounded(-2.5, ey[j], 2.5))
-            opti.subject_to(opti.bounded(-5, opt_controls[j][:self.N-1,0]-opt_controls[j][1:self.N,0], 5))
+            # opti.subject_to(opti.bounded(-5, opt_controls[j][:self.N-1,0]-opt_controls[j][1:self.N,0], 5))
             
             num_constr+= 3*self.N*2
       
@@ -420,10 +420,10 @@ class MM_MPC_TI(MPC_Base):
                             except:
                                 import pdb; pdb.set_trace()
                         
-                            opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
-                            opti.subject_to(nom_dist>=0)
-                            # soc = ca.soc(rv_dist, nom_dist)
-                            # opti.subject_to(soc>0)
+                            # opti.subject_to(rv_dist@rv_dist.T<=(nom_dist)**2)
+                            # opti.subject_to(nom_dist>=0)
+                            soc = ca.soc(rv_dist, nom_dist)
+                            opti.subject_to(soc>0)
 
                             num_constr+= 2
         else:
@@ -486,6 +486,7 @@ class MM_MPC_TI(MPC_Base):
 
         u_res = None
         next_states_pred = None
+        ev_glob_sol = None
         
         print(f"#constraints : {num_constr} and #decision_vars : {num_dec_var}")
 
@@ -509,7 +510,7 @@ class MM_MPC_TI(MPC_Base):
                 # next_states_pred = sol.value(opt_states)
                 next_states_pred = [[ca.DM(current_state).T] for j in range(scene_modes)]
 
-                ev_glob_sol      = [sol.value(ca.vertcat(opt_x[j].reshape(1,-1), opt_y[j].reshape(1,-1))) for j in range(scene_modes)]
+                ev_glob_sol      = [sol.value(ca.vertcat(opt_x[j].reshape((1,-1)), opt_y[j].reshape((1,-1)))) for j in range(scene_modes)]
                 rob_u_sol   = sol.value(rob_u)
                 bias_sols = [[None for j in range(num_modes)] for k in range(n_obs)]
                 # obca_sols  = [[None for j in range(self.num_modes)] for k in range(n_obs)]
@@ -528,7 +529,7 @@ class MM_MPC_TI(MPC_Base):
                 next_states_pred = [[ca.DM(current_state).T] for j in range(scene_modes)]
                 rob_u_sol   = sol.value(rob_u)
                 bias_sols = [[None for j in range(scene_modes)] for k in range(n_obs)]
-                ev_glob_sol      = [sol.value(ca.vertcat(opt_x[j].reshape(1,-1), opt_y[j].reshape(1,-1))) for j in range(scene_modes)]
+                ev_glob_sol      = [sol.value(ca.vertcat(opt_x[j].reshape((1,-1)), opt_y[j].reshape((1,-1)))) for j in range(scene_modes)]
                 
                 
                 for j in range(scene_modes):
@@ -621,9 +622,9 @@ class MM_MPC_TI(MPC_Base):
                     self.control_cache[agent_id].append(u[0][0,:])
                     self.current_state[agent_id] = next_state
                     self.state_cache[agent_id].append(next_state)
-                    p_collision  = Sim.get_total_collision_probability(
+                    p_collision  = Sim._get_collision_probability(
                         ev_global_trajectories,
-                        update_dict['o_glob'], update_dict['global_covs'], update_dict['Qs'], update_dict['mode_probabilities']
+                        update_dict['o_glob'], update_dict['global_covs'], update_dict['Qs'], update_dict['mode_probabilities'], update_dict['clusters']
                     )
                     collision_probability_traj.append(p_collision)
                 
