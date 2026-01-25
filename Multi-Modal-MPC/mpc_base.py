@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from metrics_logger import MetricsLogger
 from matplotlib.patches import Circle, Arrow
 from matplotlib.animation import FuncAnimation
-import seaborn as sns
+# import seaborn as sns
 from scipy.stats import multivariate_normal
 from matplotlib.colors import TwoSlopeNorm, ListedColormap
 from matplotlib.colors import Normalize
@@ -35,7 +35,7 @@ class MPC_Base:
         self.uncontrolled_fleet = uncontrolled_fleet
         self.uncontrolled_fleet_data = uncontrolled_fleet_data
         self.ped_manager = ped_manager
-        self.delta = 0.03
+        self.delta = 0.02
         self.num_modes = 2
         self.robust_horizon = robust_horizon
         self.feedback = feedback

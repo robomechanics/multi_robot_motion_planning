@@ -8,6 +8,7 @@ import scipy.special as sp
 from scipy.stats import multivariate_normal
 import pdb
 
+
 class MM_MPC(MPC_Base):            
     def _get_robot_ATV_dynamics(self, current_state, x_lin=None, u_lin=None):
         """
@@ -99,7 +100,7 @@ class MM_MPC(MPC_Base):
 
                 E=B@covar_inputs[t-1][0,0]**(0.5)
                 E_obs[t*2:(t+1)*2,:]=E_obs[(t-1)*2:t*2,:]    
-                E_obs[t*2:(t+1)*2,(t-1)*1:t*1]=E
+                E_obs[t*2:(t+1)*2,(t-1)*1:t*1]=E*(1+(1-self.feedback)*t)**0.5
 
         return T_obs, c_obs, E_obs
 
@@ -111,16 +112,19 @@ class MM_MPC(MPC_Base):
         filtered_noise_chars = []
 
         if self.mle:
+            self.num_modes=1
             for agent_idx, (agent_predictions, agent_noise) in enumerate(zip(self.gmm_predictions, self.noise_chars)):
                 # Assuming mode_prob[agent_idx] gives us the most likely mode index for the agent
                 most_likely_mode = self.mode_prob[agent_idx]
                 
                 # Ensure most_likely_mode is an integer, as expected
-                most_likely_mode = int(most_likely_mode)
+                
+                most_likely_mode = np.argmax(most_likely_mode)
+                most_likely_mode_idx = 0
                 
                 # Filter the predictions and noise characteristics to keep only those related to the most likely mode
-                most_likely_mode_prediction = {most_likely_mode: agent_predictions[most_likely_mode]}
-                most_likely_mode_noise = {most_likely_mode: agent_noise[most_likely_mode]}
+                most_likely_mode_prediction = {most_likely_mode_idx: agent_predictions[most_likely_mode]}
+                most_likely_mode_noise = {most_likely_mode_idx: agent_noise[most_likely_mode]}
                 
                 # Append these filtered predictions and noise characteristics to the new lists
                 filtered_predictions_vector.append(most_likely_mode_prediction)
@@ -221,7 +225,7 @@ class MM_MPC(MPC_Base):
         
         for agent_prediction, agent_noise in zip(filtered_predictions_vector, filtered_noise_chars):
             T_obs_k, c_obs_k, E_obs_k=[], [], []
-            pol_gains_k=[]
+            pol_gains_k={}
 
             for mode, prediction in agent_prediction.items():
                 mean_traj = prediction['means']
@@ -240,7 +244,8 @@ class MM_MPC(MPC_Base):
      
                 total_cost+= 5*ca.trace((K_stack@obs_xy_cov@obs_xy_cov.T@K_stack.T))
 
-                pol_gains_k.append(K_stack)
+                # pol_gains_k.append(K_stack)
+                pol_gains_k.update({mode:K_stack})
         
                 T_o, c_o, E_o= self._get_obs_ATV_dynamics(mean_inputs, covar_inputs, mean_traj)
 
@@ -284,7 +289,8 @@ class MM_MPC(MPC_Base):
 
                         rob_proj = tv_pos+2*self.rob_dia*(ref_pos-tv_pos)/ca.norm_2(ref_pos-tv_pos)
                         
-                        rv_dist  = sp.erfinv(1-2*self.delta)*(rob_proj-tv_pos).T@(2*ca.horzcat(E_rob[j][t*3:(t+1)*3-1,:],*[B_rob[j][t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][:-2,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(self.n_obs)]))
+                        noise_coeff = 1*ca.horzcat(E_rob[j][t*3:(t+1)*3-1,:],*[B_rob[j][t*3:(t+1)*3-1,:]@pol_gains[l][j]@E_obs[l][j][:-2,:]-int(l==k)*E_obs[k][j][t*2:(t+1)*2,:] for l in range(self.n_obs)])
+                        rv_dist  = sp.erfinv(1-2*self.delta)*(rob_proj-tv_pos).T@noise_coeff
                         
                         nom_dist = (rob_proj-tv_pos).T@(opt_states[j][t,:2].T-rob_proj)
 
@@ -343,6 +349,7 @@ class MM_MPC(MPC_Base):
             print("Agent " + str(agent_id) + " Solve Time: " + str(solve_time))
             
             for mode in range(self.num_modes):
+                # import pdb; pdb.set_trace()
                 self.feedback_gains[mode] = sol.value(pol_gains[0][mode]).toarray()
                 self.feedback_gains_cache[mode].append(sol.value(pol_gains[0][mode]).toarray())
 
@@ -373,16 +380,17 @@ class MM_MPC(MPC_Base):
         return u_res, next_states_pred
     
     def simulate(self):
-        self.setup_visualization()
-        self.setup_visualization_heatmap()
+        # self.setup_visualization()
+        # self.setup_visualization_heatmap()
         
         # parallelized implementation
+        collision_in_episode = False
         while (not self.are_all_agents_arrived() and self.num_timestep < self.total_sim_timestep):
             time_1 = time.time()
             print(self.num_timestep)
 
             for ped in self.ped_manager.pedestrians:
-                ped.update_mode_probabilities(self.prediction_cache[0], d_thresh=1.0, k=10, temperature=0.5)
+                ped.update_mode_probabilities(self.prediction_cache[0], d_thresh=.5, k=1, temperature=0.5)
 
             self.ped_manager.update_pedestrians()
     
@@ -416,8 +424,8 @@ class MM_MPC(MPC_Base):
             pool.close()
             pool.join()
 
-            self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], self.gmm_predictions, mode_prob=self.mode_prob, ref=self.ref)
-            self.plot_feedback_gains()
+            # self.plot_gmm_means_and_state(self.current_state[0], self.prediction_cache[0], self.gmm_predictions, mode_prob=self.mode_prob, ref=self.ref)
+            # self.plot_feedback_gains()
 
             # Process the results and update the current state
             for agent_id, result in enumerate(results):
@@ -445,7 +453,10 @@ class MM_MPC(MPC_Base):
             self.num_timestep += 1
             time_2 = time.time()
             self.avg_comp_time.append(time_2-time_1)
-
+            current_robot_pos = current_state[:2].squeeze()
+            ped_pos = np.array(self.current_pedestrian_state[0]).squeeze()
+            collision = np.linalg.norm(current_robot_pos-ped_pos)<0.1
+            collision_in_episode = collision or collision_in_episode
         if self.is_solution_valid(self.state_cache):
             print("Executed solution is GOOD!")
             self.max_comp_time = max(self.avg_comp_time)
@@ -456,7 +467,7 @@ class MM_MPC(MPC_Base):
             # self.feedback_gain_avg = compute_average_norm(self.feedback_gains_cache)
         else:
             self.success = False
-        
+        self.success = self.success and not collision_in_episode
         run_description = self.scenario 
 
         self.logger.log_metrics(run_description, self.trial, self.state_cache, self.control_cache, self.map, self.initial_state, self.final_state, self.avg_comp_time, self.max_comp_time, self.traj_length, self.makespan, self.avg_rob_dist, self.c_avg, self.success, self.execution_collision, self.max_time_reached, self.infeasible_count, self.feedback_gain_avg, self.uncontrolled_fleet_data, self.num_timestep)

@@ -23,8 +23,8 @@ if __name__ == "__main__":
     mpc_params = {
         'num_agents': 1,
         'dt': 0.2,
-        'N' : 12,
-        'rob_dia': 0.3,
+        'N' : 11,
+        'rob_dia': 0.5,
         'v_lim': 1.0,
         'omega_lim': 1.0,
         'total_sim_timestep': 100,
@@ -39,15 +39,15 @@ if __name__ == "__main__":
     ped_params = {
         'num_pedestrians': 1,
         'num_samples' : 5,
-        'N': 12,
+        'N': 11,
         'dt': 0.2,
-        'v_mean': 0.3,
-        'v_sigma': 0.01,
+        'v_mean': 0.5,
+        'v_sigma': 0.1,
         'omega_mean': [-0.5, 0.5],
         'omega_sigma': 0.01,
-        'mode_sample_freq': 1,
-        'barrier_d_thresh': 0.5,  # Threshold distance for barrier function
-        'barrier_k': 20,           # Steepness of barrier function
+        'mode_sample_freq': 2,
+        'barrier_d_thresh': 0.1,  # Threshold distance for barrier function
+        'barrier_k': 5,           # Steepness of barrier function
         "manual_pedestrians": [
         {"position": [0, 3], "heading": -np.pi/2, "color": "red"}
         # {"position": [1, 3], "heading": -np.pi/2, "color": "blue"}
@@ -64,17 +64,23 @@ if __name__ == "__main__":
     obstacle_density = 0.0
     # map = generate_map(map_size, 0)
 
-    num_trials = 1
-    # algs = ["MM-MPC", "MLE-MPC", "Branch-MPC", "Robust-MPC"]
-    algs = ["MM-MPC", "Branch-MPC"]
+    num_trials = 20
+    algs = ["MM-MPC", "MLE-MPC", "Branch-MPC", "Robust-MPC"][:]
+    # algs = ["MM-MPC", "Branch-MPC"]
     branch_times = [2]
-    noise_levels = [0.07]
+    noise_levels = [0.01, 0.05, 0.1, 0.2]
 
-    # results, errors = summarize_algorithm_comparison_results("mm_results_arch")
-    # plot_algorithm_comparison_results(results, errors)
+    results, errors = summarize_algorithm_comparison_results("mm_results")
+    plot_algorithm_comparison_results(results, errors)
+
+    import pdb; pdb.set_trace()
+
+   
     
     # results = summarize_ablation_comparison_results("mm_results")
     # plot_ablation_comparison_results(results)
+
+    # import pdb; pdb.set_trace()
 
     # animate_trial("MM-MPC_n_0.5_b_2", 1)
     # plot_key_timesteps("Robust-MPC_n_0.1", 8, [1,5,10,15,20,25,30])
@@ -85,8 +91,8 @@ if __name__ == "__main__":
                 initial_states = [[random.uniform(-0.1, 0.1), random.uniform(-0.1, 0.1), np.pi/2]]
                 final_states = [[random.uniform(-0.1, 0.1), random.uniform(3.5, 4.0), np.pi/2]]
                 
-                x_unc = 0#random.uniform(-0.1, 0.1) 
-                y_unc = 3.0#random.uniform(1.5, 2.5) 
+                x_unc = random.uniform(-0.1, 0.1) 
+                y_unc = random.uniform(1.5, 2.5) 
                 
                 uncontrolled_fleet = UncontrolledAgent(init_state=[(x_unc, y_unc, 0.0)], dt=mpc_params['dt'], H=mpc_params['dt']*mpc_params['N'], action_variance=noise_level)
                 uncontrolled_fleet_data = uncontrolled_fleet.simulate_diff_drive()
@@ -108,8 +114,8 @@ if __name__ == "__main__":
                         mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, ped_manager, map=map, feedback=False, robust_horizon=2, ref=ref)
                         mpc.simulate()
                     elif alg == "MLE-MPC":
-                        mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, ped_manager, map=map, feedback=True, robust_horizon=mpc_params['N'], ref=ref, mle=True)
+                        mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, ped_manager, map=map, feedback=False, robust_horizon=mpc_params['N'], ref=ref, mle=True)
                         mpc.simulate()
                     else:
-                        mpc = MM_CBS(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, ped_manager, map=map, feedback=False, robust_horizon=mpc_params['N'], ref=ref)
+                        mpc = MM_MPC(initial_states, final_states, cost_func_params, obs, mpc_params, scenario, trial, uncontrolled_fleet, uncontrolled_fleet_data, ped_manager, map=map, feedback=False, robust_horizon=mpc_params['N'], ref=ref)
                         mpc.simulate()

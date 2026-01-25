@@ -163,34 +163,40 @@ class Pedestrian:
             robot_future_states = robot_future_states
         elif robot_future_states.ndim == 3:
             robot_future_states = robot_future_states[-1]  # Get the last prediction
+        try:
+            for mode in modes:
+                ped_future_states = self.predict_future_positions(
+                    dt=self.pedestrian_simulation_dt,
+                    prediction_steps=max(robot_future_states.shape),
+                    mode=mode
+                )
+                ped_future_states = np.array(ped_future_states)  # (prediction_steps, 3)
+                # import pdb; pdb.set_trace()
+                robot_future_states = robot_future_states.reshape(-1,3)
+                
+                robot_x = robot_future_states[:, 0]
+                robot_y = robot_future_states[:, 1]
+                
+                ped_x = ped_future_states[:, 0]
+                ped_y = ped_future_states[:, 1]
 
-        for mode in modes:
-            ped_future_states = self.predict_future_positions(
-                dt=self.pedestrian_simulation_dt,
-                prediction_steps=13,
-                mode=mode
-            )
-            ped_future_states = np.array(ped_future_states)  # (prediction_steps, 3)
-            robot_future_states = robot_future_states.reshape(13,3)
-            robot_x = robot_future_states[:, 0]
-            robot_y = robot_future_states[:, 1]
-            
-            ped_x = ped_future_states[:, 0]
-            ped_y = ped_future_states[:, 1]
+                # plt.scatter(ped_x, ped_y, label=f"Pedestrian {mode}")
+                distances = np.sqrt((robot_x - ped_x)**2 + (robot_y - ped_y)**2)
+                d_min = np.min(distances)
+                cbf = barrier_function(d_min, d_thresh, k)
+                cbf_values.append(cbf)
 
-            # plt.scatter(ped_x, ped_y, label=f"Pedestrian {mode}")
-            distances = np.sqrt((robot_x - ped_x)**2 + (robot_y - ped_y)**2)
-            d_min = np.min(distances)
-            cbf = barrier_function(d_min, d_thresh, k)
-            cbf_values.append(cbf)
-
-        # Softmax conversion of CBF values.
-        cbf_values = np.array(cbf_values)
-        scaled_cbf = cbf_values / temperature
-        max_cbf = np.max(scaled_cbf)  # For numerical stability.
-        exp_cbf = np.exp(scaled_cbf - max_cbf)
-        probabilities = exp_cbf / np.sum(exp_cbf)
-        self.mode_probabilities = {'mode1': probabilities[0], 'mode2': probabilities[1]}
+            # Softmax conversion of CBF values.
+            cbf_values = np.array(cbf_values)
+            scaled_cbf = cbf_values / temperature
+            max_cbf = np.max(scaled_cbf)  # For numerical stability.
+            exp_cbf = np.exp(scaled_cbf - max_cbf)
+            probabilities = exp_cbf / np.sum(exp_cbf)
+            self.mode_probabilities = {'mode1': probabilities[0], 'mode2': probabilities[1]}
+        except:
+            # import pdb; pdb.set_trace()
+            self.mode_probabilities = {'mode1': 0.5, 'mode2': 0.5}
+            # pass
 
     def reset(self):
         self.position = self.initial_position.copy()
